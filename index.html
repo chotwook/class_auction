@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>교실 실시간 좌석 경매 시스템 (블라인드 기능 추가)</title>
+    <title>교실 실시간 좌석 경매 시스템 (개별 블라인드 버전)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
@@ -113,7 +113,7 @@
                     <div class="mt-4 grid grid-cols-2 gap-2 bg-slate-800 p-3 rounded-lg border border-slate-700">
                         <div>
                             <span class="text-xs text-slate-400 block font-medium">현재 최고 입찰자</span>
-                            <span id="current-bidder" class="font-bold text-base text-amber-400">비공개 🔒</span>
+                            <span id="current-bidder" class="font-bold text-base text-amber-400">-</span>
                         </div>
                         <div>
                             <span class="text-xs text-slate-400 block font-medium">현재 최고 입찰액</span>
@@ -192,12 +192,21 @@
                                 </div>
                             </div>
 
-                            <!-- 🔒 블라인드 경매 옵션 추가 -->
-                            <div class="bg-white p-2.5 rounded border border-amber-300/60 flex items-center gap-2 mt-1">
-                                <input type="checkbox" id="setting-reveal-price" checked class="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500">
-                                <label for="setting-reveal-price" class="font-bold text-slate-800 text-xs cursor-pointer select-none">
-                                    📢 학생들에게 최고 입찰액을 실시간으로 공개합니다.
-                                </label>
+                            <!-- 🔒 [개별 제어] 학생 공개 여부 체크박스 2개 분리 -->
+                            <div class="bg-white p-2.5 rounded border border-amber-300/60 space-y-2">
+                                <span class="block font-bold text-slate-700 text-[11px] mb-1">📢 학생 화면 실시간 공개 항목 선택:</span>
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox" id="setting-reveal-price" checked class="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500">
+                                    <label for="setting-reveal-price" class="font-bold text-slate-800 text-[11px] cursor-pointer select-none">
+                                        최고 입찰액(가격) 공개
+                                    </label>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox" id="setting-reveal-bidder" checked class="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500">
+                                    <label for="setting-reveal-bidder" class="font-bold text-slate-800 text-[11px] cursor-pointer select-none">
+                                        최고 입찰자(이름) 공개
+                                    </label>
+                                </div>
                             </div>
 
                             <!-- 가로 열 / 세로 행 조절 -->
@@ -306,7 +315,7 @@
         window.currentItemName = "";
         window.seatsData = {}; 
         window.studentsData = {}; 
-        window.configData = { currency: "카비", minBid: 10, cols: 6, rows: 4, revealPrice: true };
+        window.configData = { currency: "카비", minBid: 10, cols: 6, rows: 4, revealPrice: true, revealBidder: true };
         window.timerInterval = null; 
         window.isAuctionExpired = false; 
         window.internalCurrentBidder = "없음";
@@ -422,9 +431,10 @@
             const cols = parseInt(document.getElementById('txt-cols').innerText);
             const rows = parseInt(document.getElementById('txt-rows').innerText);
             const revealPrice = document.getElementById('setting-reveal-price').checked;
+            const revealBidder = document.getElementById('setting-reveal-bidder').checked;
 
-            baseRef.child('config').set({ currency, minBid, cols, rows, revealPrice }).then(() => {
-                alert("💾 설정이 실시간 반영되었습니다!");
+            baseRef.child('config').set({ currency, minBid, cols, rows, revealPrice, revealBidder }).then(() => {
+                alert("💾 개별 보안 설정이 실시간 적용되었습니다!");
             });
         }
 
@@ -438,13 +448,14 @@
                 document.getElementById('txt-cols').innerText = data.cols;
                 document.getElementById('txt-rows').innerText = data.rows;
                 document.getElementById('setting-reveal-price').checked = data.revealPrice ?? true;
+                document.getElementById('setting-reveal-bidder').checked = data.revealBidder ?? true;
                 document.getElementById('grid-info-display').innerText = `${data.cols} × ${data.rows}`;
                 
                 const items = document.getElementsByClassName('currency-txt');
                 for(let i=0; i<items.length; i++) { items[i].innerText = data.currency; }
                 updateCurrentSeatMinLimitLabel();
             }
-            refreshPriceDisplay();
+            refreshDataDisplay();
             renderSeatGrid();
         });
 
@@ -477,10 +488,7 @@
                 window.currentItemName = data.itemName || "진행 중인 경매 없음";
                 document.getElementById('item-name').innerText = window.currentItemName;
                 
-                const rawBidder = data.bidder || "없음";
-                window.internalCurrentBidder = rawBidder;
-                document.getElementById('current-bidder').innerText = (rawBidder === "없음" || rawBidder === "-") ? "없음" : "비공개 🔒";
-
+                window.internalCurrentBidder = data.bidder || "없음";
                 window.currentPrice = data.price || 0;
                 
                 if(data.endTime) {
@@ -492,7 +500,7 @@
                 }
                 updateCurrentSeatMinLimitLabel();
             }
-            refreshPriceDisplay();
+            refreshDataDisplay();
             const currentLoggedIn = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
             if (currentLoggedIn) updateMyBudgetUI(currentLoggedIn);
             renderSeatGrid();
@@ -503,17 +511,24 @@
             renderSeatGrid();
         });
 
-        // 🔒 블라인드 처리 여부에 따른 실시간 텍스트 변환기
-        function refreshPriceDisplay() {
+        // 🔒 블라인드 2종 독립 분기 연산 장치
+        function refreshDataDisplay() {
             const isTeacher = (USER_ROLE === 'teacher');
-            const isRevealed = (window.configData.revealPrice ?? true);
+            const isPriceRevealed = (window.configData.revealPrice ?? true);
+            const isBidderRevealed = (window.configData.revealBidder ?? true);
 
-            if (isTeacher || isRevealed) {
-                // 교사이거나 설정이 '공개'일 때 정상 노출
+            // 1. 가격 표시 처리
+            if (isTeacher || isPriceRevealed) {
                 document.getElementById('current-price').innerText = window.currentPrice.toLocaleString();
             } else {
-                // 학생이고 설정이 '비공개'일 때 마스킹 처리
                 document.getElementById('current-price').innerText = "비공개 🔒";
+            }
+
+            // 2. 입찰자 표시 처리
+            if (isTeacher || isBidderRevealed) {
+                document.getElementById('current-bidder').innerText = window.internalCurrentBidder;
+            } else {
+                document.getElementById('current-bidder').innerText = (window.internalCurrentBidder === "없음" || window.internalCurrentBidder === "-") ? "없음" : "비공개 🔒";
             }
         }
 
@@ -584,7 +599,7 @@
                 teacherPanel.classList.remove('hidden');
                 studentPanel.classList.add('hidden');
             }
-            refreshPriceDisplay();
+            refreshDataDisplay();
         }
 
         function startLocalTimer(endTimeStamp) {
