@@ -1,779 +1,555 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>교실 실시간 좌석 경매 시스템 (구조 조절 버전)</title>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    
-    <!-- Firebase 라이브러리 로드 -->
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    <title>Classroom Auction Dashboard</title>
+    <!-- 1. External Libraries -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@300;400;500;700&family=Google+Sans+Flex:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.min.js"></script>
 
+    <!-- 2. CSS Design System -->
     <style>
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.03); box-shadow: 0 0 15px rgba(234, 179, 8, 0.7); }
+        :root {
+            --primary: #0b57d0;
+            --on-primary: #fff;
+            --surface: #fff;
+            --surface-container: #f0f4f9;
+            --outline: #747775;
+            --outline-variant: #c4c7c5;
+            --success: #146c2e;
+            --error: #b3261e;
+            --warning: #f9ab00;
         }
-        .auctioning-seat {
-            animation: pulse 1.5s infinite ease-in-out;
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --primary: #a8c7fa;
+                --on-primary: #062e6f;
+                --surface: #101218;
+                --surface-container: #282a2c;
+            }
+        }
+        body {
+            font-family: 'Google Sans', 'Roboto', sans-serif;
+            background: var(--surface-container);
+            color: var(--on-surface-default);
+        }
+        /* Custom Keypad styles */
+        .pin-btn {
+            transition: all 0.15s ease-out;
+        }
+        .pin-btn:active {
+            transform: scale(0.9);
+            background-color: var(--outline-variant);
         }
     </style>
-</head>
-<body class="bg-gray-100 p-4 sm:p-6 text-gray-800 relative min-h-screen">
-
-    <!-- 🚪 학생 입장 레이어 -->
-    <div id="login-overlay" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 transition-all duration-300">
-        <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm mx-4 text-center">
-            <span class="text-4xl">👨‍🎓</span>
-            <h2 class="text-xl font-black mt-2 text-slate-800">교실 경매 시스템 입장</h2>
-            <p id="login-room-indicator" class="text-xs text-blue-600 font-bold mt-1 mb-6">[접속 방 번호: 확인중]</p>
-            
-            <div id="login-form-area" class="hidden">
-                <input type="text" id="login-name-input" placeholder="이름 입력 (예: 김철수)" 
-                       class="w-full rounded-xl border border-gray-300 p-3 text-center font-bold text-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all mb-4">
-                <button onclick="attemptLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md active:scale-95 transition-all">
-                    경매 입장하기
-                </button>
-            </div>
-            
-            <div id="login-wait-area" class="py-4">
-                <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-slate-800 mb-3"></div>
-                <p class="text-sm font-bold text-amber-600 animate-pulse">선생님이 방을 개설하고 명단을 등록 중입니다...</p>
-                <p class="text-xs text-gray-400 mt-2">등록이 완료되면 자동으로 입력창이 켜집니다.</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- 메인 대시보드 -->
-    <div class="max-w-6xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
-        
-        <!-- 상단 타이틀 및 탭 메뉴 -->
-        <div class="bg-slate-800 text-white p-6 text-center relative">
-            <h1 class="text-2xl sm:text-3xl font-extrabold mb-2">🔨 교실 실시간 좌석 경매</h1>
-            <p id="room-display-tag" class="text-sm text-amber-400 font-mono mb-2">방 번호 발급하는 중...</p>
-            
-            <div class="flex justify-center gap-2 mt-2 bg-slate-700 p-1.5 rounded-xl max-w-xs mx-auto">
-                <button id="btn-student-tab" onclick="switchTab('student')" class="flex-1 py-2 rounded-lg font-bold text-sm transition-all bg-blue-600 text-white shadow">
-                    👨‍🎓 학생 탭
-                </button>
-                <button id="btn-teacher-tab" onclick="switchTab('teacher')" class="flex-1 py-2 rounded-lg font-bold text-sm transition-all text-slate-300 hover:bg-slate-600">
-                    👩‍🏫 교사 탭
-                </button>
-            </div>
-        </div>
-
-        <!-- 메인 콘텐츠 영역 -->
-        <div class="p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-            
-            <!-- [왼쪽] 실시간 좌석 배치도 -->
-            <div class="lg:col-span-7 bg-gray-50 p-4 rounded-xl border border-gray-200">
-                <div class="flex justify-between items-center mb-4 border-b pb-2">
-                    <h3 class="font-bold text-lg text-slate-700">🪑 교실 좌석 배치도 (<span id="grid-info-display">6 × 4</span>)</h3>
-                    <div class="flex gap-2 text-xs">
-                        <span class="flex items-center gap-1"><span class="w-3 h-3 bg-white border rounded"></span>대기</span>
-                        <span class="flex items-center gap-1"><span class="w-3 h-3 bg-amber-400 rounded"></span>경매중</span>
-                        <span class="flex items-center gap-1"><span class="w-3 h-3 bg-green-500 rounded"></span>낙찰됨</span>
-                    </div>
-                </div>
-                
-                <div class="w-full bg-slate-300 text-slate-700 text-center font-bold text-sm py-1.5 rounded mb-6 shadow-sm">
-                    🖥️ 칠 판 (FRONT)
-                </div>
-
-                <!-- 자리가 동적으로 배치될 그리드 스냅샷 (Tailwind inline style로 열 개수 조절) -->
-                <div id="seat-grid" class="grid gap-2 max-w-xl mx-auto">
-                    <!-- 자바스크립트 동적 렌더링 -->
-                </div>
-
-                <!-- 📱 메인 QR 코드 영역 -->
-                <div class="mt-8 p-4 bg-white border rounded-xl flex flex-col sm:flex-row items-center justify-center gap-4 shadow-sm">
-                    <div class="text-center sm:text-left">
-                        <h4 class="font-bold text-slate-800 text-sm">📱 학생 접속용 QR 코드</h4>
-                        <p class="text-xs text-gray-500 mt-1">우리 반 학생들은 이 QR을 스캔하면<br>선생님과 같은 방으로 자동 접속됩니다.</p>
-                        <p id="share-url-text" class="text-[10px] text-blue-500 font-mono mt-2 break-all select-all bg-slate-50 p-1 rounded border"></p>
-                    </div>
-                    <img id="qr-code-img" src="" alt="접속 QR코드" class="w-24 h-24 border p-1 rounded bg-white">
-                </div>
-            </div>
-
-            <!-- [오른쪽] 제어판 -->
-            <div class="lg:col-span-5 flex flex-col justify-between space-y-6">
-                
-                <!-- 현재 경매 상황판 -->
-                <div class="bg-slate-900 text-white p-5 rounded-xl border text-center shadow-lg relative overflow-hidden">
-                    <span class="inline-block bg-amber-400 text-slate-900 text-xs font-black px-2.5 py-1 rounded-full mb-2">LIVE AUCTION</span>
-                    
-                    <div class="absolute top-4 right-4 bg-red-600 text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md shadow animate-pulse">
-                        ⏱️ <span id="timer-display">00:00</span>
-                    </div>
-
-                    <div id="item-name" class="text-2xl font-black text-amber-300 mt-1">로딩 중...</div>
-                    
-                    <div class="mt-4 grid grid-cols-2 gap-2 bg-slate-800 p-3 rounded-lg border border-slate-700">
-                        <div>
-                            <span class="text-xs text-slate-400 block font-medium">현재 최고 입찰자</span>
-                            <span id="current-bidder" class="font-bold text-base text-amber-400">비공개 🔒</span>
-                        </div>
-                        <div>
-                            <span class="text-xs text-slate-400 block font-medium">현재 가격</span>
-                            <span class="font-bold text-lg text-emerald-400"><span id="current-price">0</span> <span class="currency-txt">카비</span></span>
-                        </div>
-                    </div>
-                    
-                    <!-- 📉 개별 좌석 최소가 안내 표시 -->
-                    <div class="text-[11px] text-slate-400 mt-2">
-                        🚨 이 좌석의 입찰 하한선: <span id="current-seat-min-limit" class="text-amber-400 font-bold">0</span> <span class="currency-txt">카비</span>
-                    </div>
-                </div>
-
-                <!-- ================= 학생 전용 제어판 ================= -->
-                <div id="panel-student" class="space-y-4">
-                    <div class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 rounded-xl shadow-sm flex justify-between items-center">
-                        <div>
-                            <p class="text-[11px] text-blue-200 font-medium">내 정보 (실시간 입찰액 반영)</p>
-                            <h4 class="text-base font-bold mt-0.5">
-                                👤 <span id="my-profile-name">-</span> 학생
-                            </h4>
-                            <p class="text-lg font-black text-amber-300 mt-1">
-                                💰 가용 잔액: <span id="my-profile-budget">0</span> <span class="currency-txt">카비</span>
-                            </p>
-                        </div>
-                        <button onclick="logoutStudent()" class="bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-md text-xs font-medium transition-all">
-                            이름 변경
-                        </button>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
-                        <div>
-                            <label class="block text-sm font-bold text-slate-600 mb-1">💰 입찰할 금액 입력 (<span class="currency-txt">카비</span>)</label>
-                            <input type="number" id="student-bid-input" placeholder="현재 가격보다 높은 금액 입력" class="w-full rounded-lg border border-gray-300 p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-red-600 text-lg">
-                        </div>
-                    </div>
-
-                    <button onclick="placeCustomBid()" class="w-full bg-gradient-to-b from-blue-500 to-blue-600 text-white py-4 rounded-xl font-bold shadow-md hover:from-blue-600 hover:to-blue-700 transition-all text-base active:scale-95">
-                        입찰 신청하기
-                    </button>
-                </div>
-
-                <!-- ================= 교사 전용 제어판 ================= -->
-                <div id="panel-teacher" class="hidden space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm">
-                    <div class="flex justify-between items-center mb-2">
-                        <h3 class="text-sm font-extrabold text-slate-500 uppercase tracking-wider">📢 선생님 제어판</h3>
-                        <span id="teacher-lock-status" class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold">인증 필요 🔒</span>
-                    </div>
-
-                    <!-- 관리자 암호 로그인 구역 -->
-                    <div id="teacher-setup-zone" class="bg-amber-50 p-3 rounded-lg border border-amber-200 space-y-2">
-                        <span class="block text-xs font-bold text-amber-800">🔑 이 방의 관리자 암호 설정/로그인</span>
-                        <div class="flex gap-2">
-                            <input type="password" id="teacher-pwd-input" placeholder="비밀번호 설정 또는 입력" class="flex-1 p-2 border rounded text-xs bg-white outline-none font-bold">
-                            <button onclick="authOrCreateTeacher()" class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded text-xs font-bold transition-all">
-                                인증/개설
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- 잠금 해제 제어 기능 -->
-                    <div id="teacher-controls" class="opacity-40 pointer-events-none space-y-4 transition-all duration-300">
-                        
-                        <!-- ⚙️ [핵심 추가] 화폐, 최소금액, 열/행 구조 설정 대시보드 -->
-                        <div class="bg-amber-50 p-3 rounded-xl border border-amber-200 space-y-3 text-xs">
-                            <span class="block font-black text-amber-900 text-sm border-b pb-1">⚙️ 교실 규칙 및 구조 설정</span>
-                            
-                            <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="block font-bold text-gray-700 mb-0.5">💰 화폐 단위</label>
-                                    <input type="text" id="setting-currency" value="카비" class="w-full p-1.5 border rounded bg-white font-bold text-center">
-                                </div>
-                                <div>
-                                    <label class="block font-bold text-gray-700 mb-0.5">📉 기본 최소 입찰금</label>
-                                    <input type="number" id="setting-min-bid" value="10" class="w-full p-1.5 border rounded bg-white font-bold text-center">
-                                </div>
-                            </div>
-
-                            <!-- 🪑 가로 열 / 세로 행 조절 버튼 기믹 -->
-                            <div class="grid grid-cols-2 gap-2 pt-1">
-                                <div>
-                                    <label class="block font-bold text-gray-700 mb-1">↔️ 가로 칸수 (열)</label>
-                                    <div class="flex items-center border rounded bg-white overflow-hidden justify-between">
-                                        <button onclick="adjustGrid('cols', -1)" class="bg-gray-200 px-3 py-1 font-black text-gray-600 hover:bg-gray-300">-</button>
-                                        <span id="txt-cols" class="font-bold text-slate-800 text-center flex-1">6</span>
-                                        <button onclick="adjustGrid('cols', 1)" class="bg-gray-200 px-3 py-1 font-black text-gray-600 hover:bg-gray-300">+</button>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label class="block font-bold text-gray-700 mb-1">↕️ 세로 줄수 (행)</label>
-                                    <div class="flex items-center border rounded bg-white overflow-hidden justify-between">
-                                        <button onclick="adjustGrid('rows', -1)" class="bg-gray-200 px-3 py-1 font-black text-gray-600 hover:bg-gray-300">-</button>
-                                        <span id="txt-rows" class="font-bold text-slate-800 text-center flex-1">4</span>
-                                        <button onclick="adjustGrid('rows', 1)" class="bg-gray-200 px-3 py-1 font-black text-gray-600 hover:bg-gray-300">+</button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button onclick="saveTeacherSettings()" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded shadow-sm transition-all text-center mt-1">
-                                💾 설정 및 구조 저장/일괄 적용
-                            </button>
-                        </div>
-
-                        <!-- 학생 등록창 -->
-                        <div class="bg-white p-3 rounded-lg border border-gray-200 space-y-2">
-                            <span class="block text-xs font-bold text-slate-700">📋 학생 일괄 등록 (이름,금액)</span>
-                            <textarea id="teacher-bulk-input" rows="2" placeholder="이름,금액 (한 줄에 한 명씩)&#10;예시: 홍길동,500" class="w-full p-2 border rounded text-xs font-mono bg-slate-50 focus:bg-white outline-none"></textarea>
-                            <button onclick="importBulkStudents()" class="w-full bg-slate-700 hover:bg-slate-800 text-white py-1.5 rounded text-xs font-bold transition-all">
-                                명단 일괄 등록하기
-                            </button>
-                            
-                            <div class="max-h-20 overflow-y-auto border-t pt-2 mt-2 text-xs space-y-1" id="teacher-student-list">
-                                <p class="text-gray-400 text-center">등록된 학생이 없습니다.</p>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">🪑 경매 좌석 번호 기입</label>
-                            <input type="text" id="new-item-name" placeholder="예: 1번 좌석" class="w-full p-2 border rounded-lg text-sm bg-white outline-none">
-                        </div>
-                        
-                        <div class="grid grid-cols-2 gap-2">
-                            <button onclick="startTargetAuction()" class="w-full bg-slate-800 hover:bg-slate-900 text-white p-2.5 rounded-lg text-xs font-bold transition-all col-span-2">
-                                경매 시작 (1분 타이머)
-                            </button>
-                            <button onclick="closeAuction()" class="w-full bg-green-600 hover:bg-green-700 text-white p-2.5 rounded-lg text-xs font-bold transition-all">
-                                🏅 낙찰 완료 (확정)
-                            </button>
-                            <button onclick="cancelAuctionWithoutWinner()" class="w-full bg-amber-600 hover:bg-amber-700 text-white p-2.5 rounded-lg text-xs font-bold transition-all">
-                                ❌ 유찰 종료
-                            </button>
-                        </div>
-                        
-                        <button onclick="resetWholeAuction()" class="w-full bg-red-100 hover:bg-red-200 text-red-700 p-2 rounded-lg text-xs font-bold border border-red-200 transition-all mt-1">
-                            ⚠️ 전체 초기화 (리셋)
-                        </button>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-
-    <!-- 스크립트 엔진 -->
     <script>
-        function getOrGenerateRandomRoomId() {
-            const params = new URLSearchParams(window.location.search);
-            let room = params.get('room');
-            if (!room) {
-                room = String(Math.floor(100000 + Math.random() * 900000));
-                params.set('room', room);
-                window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
-            }
-            return room;
-        }
-
-        const CLASSROOM_ID = getOrGenerateRandomRoomId(); 
-        
-        // 선생님의 고유 Firebase 구성
-        const firebaseConfig = {
-            apiKey: "AIzaSyDZ2BMCd3kspcmWnH3_BWUIsUBU3TGNikc",
-            authDomain: "gyungmae.firebaseapp.com",
-            databaseURL: "https://gyungmae-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "gyungmae",
-            storageBucket: "gyungmae.firebasestorage.app",
-            messagingSenderId: "1003475298384",
-            appId: "1:1003475298384:web:1972d89a171e3e7ebb0955",
-            measurementId: "G-JEYGLNSVME"
-        };
-
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
-        const baseRef = database.ref(`auctions_rooms/${CLASSROOM_ID}`);
-
-        // 시스템 글로벌 상태변수
-        window.currentPrice = 0;
-        window.currentItemName = "";
-        window.seatsData = {}; 
-        window.studentsData = {}; 
-        window.configData = { currency: "카비", minBid: 10, cols: 6, rows: 4 }; // 기본값 믹스인
-        window.timerInterval = null; 
-        window.isAuctionExpired = false; 
-        window.internalCurrentBidder = "없음";
-
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-        function playClickSound() {
-            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.05);
-        }
-
-        function playTickSound() {
-            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.type = 'triangle'; osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.08);
-        }
-
-        function playFanfareSound() {
-            const now = audioCtx.currentTime;
-            const notes = [523.25, 659.25, 783.99, 1046.50]; 
-            notes.forEach((freq, index) => {
-                const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-                osc.connect(gain); gain.connect(audioCtx.destination);
-                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(freq, now + (index * 0.12));
-                gain.gain.setValueAtTime(0.1, now + (index * 0.12));
-                gain.gain.exponentialRampToValueAtTime(0.01, now + (index * 0.12) + 0.4);
-                osc.start(now + (index * 0.12)); osc.stop(now + (index * 0.12) + 0.4);
-            });
-        }
-
-        window.onload = function() {
-            document.getElementById('room-display-tag').innerText = `🔢 교실 방 번호: [ ${CLASSROOM_ID} ]`;
-            document.getElementById('login-room-indicator').innerText = `[접속 방 번호: ${CLASSROOM_ID}]`;
-            
-            const currentUrl = window.location.href;
-            document.getElementById('share-url-text').innerText = currentUrl;
-            document.getElementById('qr-code-img').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(currentUrl)}`;
-            
-            document.body.addEventListener('click', () => {
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-            }, { once: true });
-
-            if (sessionStorage.getItem(`teacher_auth_${CLASSROOM_ID}`) === 'true') {
-                unlockTeacherControls();
-            }
-        };
-
-        // 🛠️ 교사 인증
-        function authOrCreateTeacher() {
-            playClickSound();
-            const pwdInput = document.getElementById('teacher-pwd-input').value.trim();
-            if (!pwdInput) { alert("비밀번호를 입력하세요."); return; }
-
-            baseRef.child('teacher_pwd').get().then((snapshot) => {
-                if (!snapshot.exists()) {
-                    baseRef.child('teacher_pwd').set(pwdInput).then(() => {
-                        alert("🎉 이 방의 고유 관리자 암호가 등록되었습니다!");
-                        sessionStorage.setItem(`teacher_auth_${CLASSROOM_ID}`, 'true');
-                        unlockTeacherControls();
-                        saveTeacherSettings(); // 첫 개설 시 기본 설정 저장 유도
-                    });
-                } else {
-                    if (snapshot.val() === pwdInput) {
-                        alert("🔓 교사 인증에 성공했습니다.");
-                        sessionStorage.setItem(`teacher_auth_${CLASSROOM_ID}`, 'true');
-                        unlockTeacherControls();
-                    } else {
-                        alert("❌ 비밀번호가 틀렸습니다.");
-                    }
-                }
-            });
-        }
-
-        function unlockTeacherControls() {
-            document.getElementById('teacher-lock-status').innerText = "인증 완료 🔓";
-            document.getElementById('teacher-lock-status').className = "text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold";
-            document.getElementById('teacher-setup-zone').classList.add('hidden');
-            document.getElementById('teacher-controls').style.opacity = "1";
-            document.getElementById('teacher-controls').style.pointerEvents = "auto";
-        }
-
-        // 🪑 가로(열)/세로(행) 버튼 조절 로직
-        function adjustGrid(type, amount) {
-            playClickSound();
-            if(type === 'cols') {
-                let currentCols = parseInt(document.getElementById('txt-cols').innerText);
-                currentCols = Math.max(1, Math.min(12, currentCols + amount)); // 최소 1, 최대 12열 제한
-                document.getElementById('txt-cols').innerText = currentCols;
-            } else if(type === 'rows') {
-                let currentRows = parseInt(document.getElementById('txt-rows').innerText);
-                currentRows = Math.max(1, Math.min(10, currentRows + amount)); // 최소 1, 최대 10행 제한
-                document.getElementById('txt-rows').innerText = currentRows;
-            }
-        }
-
-        // 💾 교사 룰 셋 및 구조 저장
-        function saveTeacherSettings() {
-            playClickSound();
-            const currency = document.getElementById('setting-currency').value.trim() || "카비";
-            const minBid = parseInt(document.getElementById('setting-min-bid').value) || 0;
-            const cols = parseInt(document.getElementById('txt-cols').innerText);
-            const rows = parseInt(document.getElementById('txt-rows').innerText);
-
-            baseRef.child('config').set({ currency, minBid, cols, rows }).then(() => {
-                alert("💾 화폐 단위, 최소 입찰금 및 자릿수 구조가 실시간 반영되었습니다!");
-            });
-        }
-
-        // 📡 DB 실시간 감지 리스너 모음
-        baseRef.child('config').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if(data) {
-                window.configData = data;
-                
-                // 인풋 폼 및 텍스트 렌더링 동기화
-                document.getElementById('setting-currency').value = data.currency;
-                document.getElementById('setting-min-bid').value = data.minBid;
-                document.getElementById('txt-cols').innerText = data.cols;
-                document.getElementById('txt-rows').innerText = data.rows;
-                
-                document.getElementById('grid-info-display').innerText = `${data.cols} × ${data.rows}`;
-                
-                // 화폐단위 클래스 일괄 적용
-                const items = document.getElementsByClassName('currency-txt');
-                for(let i=0; i<items.length; i++) {
-                    items[i].innerText = data.currency;
-                }
-                
-                // 현재 진행중인 좌석의 최소가 라벨 갱신용
-                updateCurrentSeatMinLimitLabel();
-            }
-            renderSeatGrid();
-        });
-
-        baseRef.child('students').on('value', (snapshot) => {
-            window.studentsData = snapshot.val() || {};
-            renderStudentList();
-            
-            const keys = Object.keys(window.studentsData);
-            if (keys.length > 0) {
-                document.getElementById('login-wait-area').classList.add('hidden');
-                document.getElementById('login-form-area').classList.remove('hidden');
-                
-                const savedName = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
-                if (savedName && window.studentsData[savedName] !== undefined) {
-                    applyStudentSession(savedName);
-                }
-            } else {
-                document.getElementById('login-form-area').classList.add('hidden');
-                document.getElementById('login-wait-area').classList.remove('hidden');
-                document.getElementById('login-overlay').classList.remove('hidden');
-            }
-
-            const currentLoggedIn = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
-            if (currentLoggedIn) updateMyBudgetUI(currentLoggedIn);
-        });
-
-        baseRef.child('current').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                window.currentItemName = data.itemName || "진행 중인 경매 없음";
-                document.getElementById('item-name').innerText = window.currentItemName;
-                
-                const rawBidder = data.bidder || "없음";
-                window.internalCurrentBidder = rawBidder;
-                document.getElementById('current-bidder').innerText = (rawBidder === "없음" || rawBidder === "-") ? "없음" : "비공개 🔒";
-
-                document.getElementById('current-price').innerText = (data.price || 0).toLocaleString();
-                window.currentPrice = data.price || 0;
-                
-                if(data.endTime) {
-                    startLocalTimer(data.endTime);
-                } else {
-                    clearInterval(window.timerInterval);
-                    document.getElementById('timer-display').innerText = "00:00";
-                    window.isAuctionExpired = false;
-                }
-                updateCurrentSeatMinLimitLabel();
-            }
-            const currentLoggedIn = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
-            if (currentLoggedIn) updateMyBudgetUI(currentLoggedIn);
-            renderSeatGrid();
-        });
-
-        baseRef.child('seats').on('value', (snapshot) => {
-            window.seatsData = snapshot.val() || {};
-            renderSeatGrid();
-        });
-
-        function updateCurrentSeatMinLimitLabel() {
-            if(window.currentItemName && window.currentItemName !== "진행 중인 경매 없음") {
-                const limit = (window.seatsData && window.seatsData[window.currentItemName]) ? (window.seatsData[window.currentItemName].minLimit ?? window.configData.minBid) : window.configData.minBid;
-                document.getElementById('current-seat-min-limit').innerText = limit;
-            } else {
-                document.getElementById('current-seat-min-limit').innerText = "0";
-            }
-        }
-
-        function attemptLogin() {
-            playClickSound();
-            const nameInput = document.getElementById('login-name-input').value.trim();
-            if (!nameInput) { alert("이름을 입력해 주세요."); return; }
-
-            if (!window.studentsData || window.studentsData[nameInput] === undefined) {
-                alert(`❌ 등록되지 않은 이름입니다.`);
-                return;
-            }
-            localStorage.setItem(`student_name_${CLASSROOM_ID}`, nameInput);
-            applyStudentSession(nameInput);
-        }
-
-        function applyStudentSession(name) {
-            document.getElementById('login-overlay').classList.add('hidden');
-            document.getElementById('my-profile-name').innerText = name;
-            updateMyBudgetUI(name);
-        }
-
-        function logoutStudent() {
-            playClickSound();
-            localStorage.removeItem(`student_name_${CLASSROOM_ID}`);
-            document.getElementById('login-name-input').value = "";
-            document.getElementById('login-overlay').classList.remove('hidden');
-        }
-
-        function updateMyBudgetUI(name) {
-            if (window.studentsData && window.studentsData[name] !== undefined) {
-                let rawBudget = window.studentsData[name]; 
-                let holdingMoney = 0;
-                if (window.internalCurrentBidder === name && window.currentItemName !== "진행 중인 경매 없음") {
-                    holdingMoney = window.currentPrice;
-                }
-                document.getElementById('my-profile-budget').innerText = Math.max(0, rawBudget - holdingMoney).toLocaleString();
-            }
-        }
-
-        function switchTab(role) {
-            playClickSound();
-            const studentTab = document.getElementById('btn-student-tab');
-            const teacherTab = document.getElementById('btn-teacher-tab');
-            const studentPanel = document.getElementById('panel-student');
-            const teacherPanel = document.getElementById('panel-teacher');
-
-            if (role === 'student') {
-                studentTab.className = "flex-1 py-2 rounded-lg font-bold text-sm transition-all bg-blue-600 text-white shadow";
-                teacherTab.className = "flex-1 py-2 rounded-lg font-bold text-sm transition-all text-slate-300 hover:bg-slate-600";
-                studentPanel.classList.remove('hidden');
-                teacherPanel.classList.add('hidden');
-            } else {
-                teacherTab.className = "flex-1 py-2 rounded-lg font-bold text-sm transition-all bg-slate-900 text-white shadow";
-                studentTab.className = "flex-1 py-2 rounded-lg font-bold text-sm transition-all text-slate-400 hover:bg-slate-200";
-                teacherPanel.classList.remove('hidden');
-                studentPanel.classList.add('hidden');
-            }
-        }
-
-        function startLocalTimer(endTimeStamp) {
-            clearInterval(window.timerInterval);
-            window.isAuctionExpired = false; 
-            let lastRemainingSec = null;
-
-            window.timerInterval = setInterval(() => {
-                const now = new Date().getTime();
-                const timeLeft = endTimeStamp - now;
-
-                if (timeLeft <= 0) {
-                    clearInterval(window.timerInterval);
-                    document.getElementById('timer-display').innerText = "종료됨";
-                    window.isAuctionExpired = true; 
-                    return;
-                }
-                const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-                const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
-                
-                if (minutes === 0 && seconds <= 10 && seconds !== lastRemainingSec) {
-                    playTickSound(); lastRemainingSec = seconds;
-                }
-                document.getElementById('timer-display').innerText = `${minutes < 10 ? "0"+minutes : minutes}:${seconds < 10 ? "0"+seconds : seconds}`;
-            }, 200);
-        }
-
-        // 🎨 동적 격렬 렌더링
-        function renderSeatGrid() {
-            const gridContainer = document.getElementById('seat-grid');
-            gridContainer.innerHTML = "";
-
-            // 동적 가로 열 개수 설정
-            const totalCols = window.configData.cols || 6;
-            const totalRows = window.configData.rows || 4;
-            gridContainer.style.gridTemplateColumns = `repeat(${totalCols}, minmax(0, 1fr))`;
-
-            const totalSeatsCount = totalCols * totalRows;
-
-            for(let i = 1; i <= totalSeatsCount; i++) {
-                const seatName = `${i}번 좌석`;
-                const seatInfo = window.seatsData[seatName] || { status: 'empty', winner: '' };
-                const seatButton = document.createElement('button');
-                seatButton.type = "button";
-                
-                let baseClass = "h-14 sm:h-16 rounded-lg border flex flex-col items-center justify-center p-1 font-bold transition-all text-[10px] sm:text-xs text-center ";
-                
-                if (window.currentItemName === seatName) {
-                    baseClass += "bg-amber-400 border-amber-500 text-amber-950 auctioning-seat shadow-md";
-                    seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] text-red-600 font-extrabold mt-0.5">🔥 경매</span>`;
-                } else if (seatInfo.status === 'sold') {
-                    baseClass += "bg-green-500 border-green-600 text-white cursor-not-allowed shadow-sm";
-                    seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] bg-green-700 px-0.5 rounded mt-0.5 overflow-hidden max-w-full text-ellipsis whitespace-nowrap">${seatInfo.winner}</span>`;
-                    seatButton.disabled = true;
-                } else {
-                    baseClass += "bg-white border-gray-300 text-gray-600 hover:border-blue-400 hover:bg-blue-50 cursor-pointer";
-                    seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] text-gray-400 font-normal mt-0.5">대기</span>`;
-                }
-
-                seatButton.className = baseClass;
-                seatButton.onclick = () => {
-                    playClickSound();
-                    if (sessionStorage.getItem(`teacher_auth_${CLASSROOM_ID}`) === 'true') {
-                        document.getElementById('new-item-name').value = seatName;
-                    }
-                };
-                gridContainer.appendChild(seatButton);
-            }
-        }
-
-        function renderStudentList() {
-            const listDiv = document.getElementById('teacher-student-list');
-            listDiv.innerHTML = "";
-            const keys = Object.keys(window.studentsData);
-            if(keys.length === 0) {
-                listDiv.innerHTML = '<p class="text-gray-400 text-center">등록된 학생이 없습니다.</p>';
-                return;
-            }
-            keys.forEach(name => {
-                const money = window.studentsData[name];
-                const item = document.createElement('div');
-                item.className = "flex justify-between items-center bg-gray-100 p-1 rounded font-mono";
-                item.innerHTML = `<span>👤 <b>${name}</b></span><span class="text-blue-600 font-bold">${parseInt(money).toLocaleString()} ${window.configData.currency}</span>`;
-                listDiv.appendChild(item);
-            });
-        }
-
-        function importBulkStudents() {
-            playClickSound();
-            const rawText = document.getElementById('teacher-bulk-input').value.trim();
-            if(!rawText) { alert("내용을 입력해주세요."); return; }
-
-            const lines = rawText.split('\n');
-            const updateObject = {};
-            let count = 0;
-
-            lines.forEach(line => {
-                const tokens = line.trim().split(',');
-                if(tokens.length >= 2) {
-                    const name = tokens[0].trim();
-                    const money = parseInt(tokens[1].trim());
-                    if(name && !isNaN(money)) { updateObject[name] = money; count++; }
-                }
-            });
-
-            if(count > 0) {
-                baseRef.child('students').update(updateObject).then(() => {
-                    alert(`총 ${count}명 일괄 등록 완료!`);
-                    document.getElementById('teacher-bulk-input').value = "";
-                });
-            } else {
-                alert("형식 오류. '이름,금액' 형태로 기입해 주세요.");
-            }
-        }
-
-        function placeCustomBid() {
-            playClickSound();
-            const name = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
-            const bidInput = document.getElementById('student-bid-input').value.trim();
-
-            if (!name) { alert("로그인 정보 오류."); logoutStudent(); return; }
-            if (!bidInput || isNaN(bidInput)) { alert("숫자를 입력해주세요."); return; }
-            if (window.currentItemName === "진행 중인 경매 없음" || !window.currentItemName) { alert("진행 중인 경매가 없습니다."); return; }
-            if (window.isAuctionExpired) { alert("⏰ 경매 시간 종료!"); return; }
-
-            let isAlreadyWon = false;
-            if (window.seatsData) {
-                for (const seatKey in window.seatsData) {
-                    if (window.seatsData[seatKey].status === 'sold' && window.seatsData[seatKey].winner === name) {
-                        isAlreadyWon = true; break;
-                    }
-                }
-            }
-            if (isAlreadyWon) { alert("❌ 이미 자리를 낙찰받았습니다."); return; }
-
-            const customBidPrice = parseInt(bidInput);
-            
-            // 최소 제한가 측정 (개별 설정값 혹은 글로벌 설정값)
-            const currentSeatMin = (window.seatsData && window.seatsData[window.currentItemName]) ? (window.seatsData[window.currentItemName].minLimit ?? window.configData.minBid) : window.configData.minBid;
-
-            if (customBidPrice < currentSeatMin) {
-                alert(`이 좌석의 최소 입찰 제한액은 ${currentSeatMin}${window.configData.currency} 입니다.`);
-                return;
-            }
-
-            if (customBidPrice <= window.currentPrice) {
-                alert(`현재가보다 높아야 합니다.`);
-                return;
-            }
-
-            const rawBudget = window.studentsData[name];
-            if (customBidPrice > rawBudget) {
-                alert(`보유 총액을 초과할 수 없습니다.`);
-                return;
-            }
-
-            baseRef.child('current').update({ bidder: name, price: customBidPrice }).then(() => {
-                document.getElementById('student-bid-input').value = "";
-            });
-        }
-
-        function startTargetAuction() {
-            playClickSound();
-            const targetSeat = document.getElementById('new-item-name').value.trim();
-            if (!targetSeat) { alert("좌석을 선택해 주세요."); return; }
-            window.isAuctionExpired = false;
-            const endTimeStamp = new Date().getTime() + 60000;
-            
-            // 해당 좌석에 설정된 고유 미니멈 정보가 없다면 현 시점의 글로벌 설정을 기본 할당
-            if(!window.seatsData[targetSeat]) {
-                baseRef.child(`seats/${targetSeat}`).update({ minLimit: window.configData.minBid, status: 'empty', winner: '' });
-            }
-
-            baseRef.child('current').set({
-                itemName: targetSeat, bidder: "없음", price: 0, endTime: endTimeStamp
-            });
-        }
-
-        function closeAuction() {
-            if (window.currentItemName === "진행 중인 경매 없음" || !window.currentItemName) return;
-            const currentBidder = window.internalCurrentBidder;
-            if (!currentBidder || currentBidder === "없음" || currentBidder === "-") {
-                alert("입찰 참여자가 없습니다."); return;
-            }
-            playFanfareSound();
-            baseRef.child(`seats/${window.currentItemName}`).update({
-                status: 'sold', winner: currentBidder, finalPrice: window.currentPrice
-            });
-            if(window.studentsData && window.studentsData[currentBidder] !== undefined) {
-                baseRef.child(`students/${currentBidder}`).set(Math.max(0, window.studentsData[currentBidder] - window.currentPrice));
-            }
-            baseRef.child('current').set({ itemName: "진행 중인 경매 없음", bidder: "없음", price: 0, endTime: null });
-            alert(`🎉 [${window.currentItemName}] 낙찰 완료!`);
-            document.getElementById('new-item-name').value = "";
-        }
-
-        function cancelAuctionWithoutWinner() {
-            playClickSound();
-            if (window.currentItemName === "진행 중인 경매 없음" || !window.currentItemName) return;
-            if (!confirm("유찰 처리하시겠습니까?")) return;
-            clearInterval(window.timerInterval);
-            window.isAuctionExpired = false;
-            baseRef.child('current').set({ itemName: "진행 중인 경매 없음", bidder: "없음", price: 0, endTime: null }).then(() => {
-                document.getElementById('new-item-name').value = "";
-            });
-        }
-
-        function resetWholeAuction() {
-            playClickSound();
-            if (!confirm("전체 데이터를 리셋합니까?")) return;
-            clearInterval(window.timerInterval);
-            window.isAuctionExpired = false;
-            baseRef.remove();
-            sessionStorage.removeItem(`teacher_auth_${CLASSROOM_ID}`);
-            localStorage.removeItem(`student_name_${CLASSROOM_ID}`);
-            alert("초기화 완료.");
-            location.reload();
-        }
+      window['CALLER_ID'] = 'spark';
     </script>
+</head>
+<body class="spark-widget-shell">
+
+<script>
+const { state } = WH.createApp({
+  title: "Classroom Auction Dashboard",
+  params: {
+    roomNumber: { type: "text", value: "617521", label: "Room Number" },
+    currency: { type: "text", value: "KAV", label: "Currency Unit" },
+    duration: { type: "number", value: 30, min: 5, max: 120, label: "Default Timer (s)" },
+    teacherPIN: { type: "text", value: "1234", label: "Teacher PIN Code" }
+  },
+  internal_state: {
+    authenticated: false,
+    timeLeft: 30,
+    play: false,
+    isFinished: false,
+    currentBid: 1500,
+    bidderName: "Team A"
+  },
+  sizing: { viz: { height: 420 } },
+  editorial: {
+    hud: [
+      { label: "Status", value: "Locked" },
+      { label: "Role", value: "Student Mode" }
+    ]
+  }
+});
+
+WH.initD3('viz', ({ el, width, height, state, ui }) => {
+  if (width < 50 || height < 50) return;
+
+  // --- AUDIO SYNTHESIS ---
+  let audioCtx = null;
+  const initAudio = () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  };
+
+  const playClick = (isTock) => {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const freq = isTock ? 880 : 440;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.05);
+  };
+
+  const playBuzzer = () => {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 1);
+    gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1.2);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 1.2);
+  };
+
+  const playGavelSlam = () => {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const noise = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(90, audioCtx.currentTime);
+    noise.type = 'sawtooth';
+    noise.frequency.setValueAtTime(45, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.6, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+    osc.connect(gain);
+    noise.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    noise.start();
+    osc.stop(audioCtx.currentTime + 0.45);
+    noise.stop(audioCtx.currentTime + 0.45);
+  };
+
+  // --- HTML DOM CREATION WITH TAILWIND ---
+  const container = d3.select(el)
+    .append('div')
+    .attr('class', 'w-full h-full flex flex-col relative select-none rounded-2xl overflow-hidden bg-slate-50 dark:bg-zinc-900 shadow-inner p-4');
+
+  // Upper Control & Status Bar
+  const statusBar = container.append('div')
+    .attr('class', 'w-full flex items-center justify-between bg-white dark:bg-zinc-800 rounded-xl p-3 shadow-sm mb-4 border border-slate-100 dark:border-zinc-700');
+
+  // Secret Multi-Tap Detector on the Room Info
+  let clickCount = 0;
+  let clickTimeout;
+
+  const roomDisplay = statusBar.append('div')
+    .attr('class', 'flex items-center gap-2 cursor-pointer transition hover:bg-slate-100 dark:hover:bg-zinc-700/50 px-2 py-1 rounded-lg')
+    .on('pointerdown', () => {
+      initAudio();
+      clickCount++;
+      clearTimeout(clickTimeout);
+      if (clickCount >= 3) {
+        clickCount = 0;
+        if (!state.authenticated) {
+          openPinModal();
+        }
+      } else {
+        clickTimeout = setTimeout(() => { clickCount = 0; }, 400);
+      }
+    });
+  
+  roomDisplay.append('span')
+    .attr('class', 'material-icons text-blue-600')
+    .text('school');
+  
+  const roomText = roomDisplay.append('span')
+    .attr('class', 'font-bold text-sm tracking-wide text-slate-700 dark:text-slate-200');
+
+  // Interactive Teacher Authentication Button (Hidden for students, only visible as "Lock" for teachers)
+  const authContainer = statusBar.append('div')
+    .attr('class', 'flex items-center gap-2');
+
+  const authBadge = authContainer.append('span')
+    .attr('class', 'text-xs px-2.5 py-1 rounded-full font-semibold transition-all')
+    .text('Student Mode');
+
+  // Lock button: only displays when authenticated to let the teacher lock back the board easily
+  const lockBtn = authContainer.append('button')
+    .attr('class', 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 hover:bg-rose-100 transition shadow-sm hidden')
+    .on('pointerdown', () => {
+      initAudio();
+      state.authenticated = false; // Lock back to student mode
+    });
+
+  const lockBtnIcon = lockBtn.append('span')
+    .attr('class', 'material-icons text-sm')
+    .text('lock');
+
+  const lockBtnText = lockBtn.append('span')
+    .text('Lock Board');
+
+  const board = container.append('div')
+    .attr('class', 'flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-4 items-center justify-center');
+
+  // Circular Timer Display Panel
+  const timerPanel = board.append('div')
+    .attr('class', 'w-full h-full flex flex-col items-center justify-center relative');
+
+  // SVG Progress Arc for visual countdown
+  const arcSvg = timerPanel.append('svg')
+    .attr('class', 'absolute w-48 h-48')
+    .attr('viewBox', '0 0 100 100');
+
+  const progressBg = arcSvg.append('circle')
+    .attr('cx', 50)
+    .attr('cy', 50)
+    .attr('r', 45)
+    .attr('fill', 'none')
+    .attr('stroke', '#e2e8f0')
+    .attr('stroke-width', 4);
+
+  const progressFilled = arcSvg.append('circle')
+    .attr('cx', 50)
+    .attr('cy', 50)
+    .attr('r', 45)
+    .attr('fill', 'none')
+    .attr('stroke', '#3b82f6')
+    .attr('stroke-width', 4)
+    .attr('stroke-dasharray', 283)
+    .attr('stroke-dashoffset', 0)
+    .attr('transform', 'rotate(-90, 50, 50)');
+
+  const timeValue = timerPanel.append('div')
+    .attr('class', 'z-10 font-bold text-6xl tracking-tighter text-slate-800 dark:text-white flex flex-col items-center');
+  
+  const secondsDisplay = timeValue.append('span')
+    .attr('class', 'leading-none')
+    .text('00');
+  
+  const timerLabel = timeValue.append('span')
+    .attr('class', 'text-[10px] uppercase tracking-widest text-slate-400 mt-1')
+    .text('SECONDS LEFT');
+
+  // Live Bid Panel
+  const bidPanel = board.append('div')
+    .attr('class', 'w-full h-full bg-white dark:bg-zinc-800 rounded-2xl p-6 flex flex-col justify-between shadow-sm border border-slate-100 dark:border-zinc-700 min-h-[160px]');
+
+  const bidHeader = bidPanel.append('div');
+  bidHeader.append('div')
+    .attr('class', 'text-xs text-slate-400 font-semibold tracking-wider uppercase mb-1')
+    .text('Current Leading Bid');
+
+  const bidAmount = bidHeader.append('div')
+    .attr('class', 'text-4xl font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight')
+    .text('1,500 KAV');
+
+  const bidderDisplay = bidPanel.append('div')
+    .attr('class', 'flex items-center gap-2 mt-2 bg-slate-50 dark:bg-zinc-700/50 p-2.5 rounded-xl');
+
+  bidderDisplay.append('span')
+    .attr('class', 'material-icons text-emerald-500 text-lg')
+    .text('stars');
+
+  const bidderNameText = bidderDisplay.append('span')
+    .attr('class', 'text-sm font-bold text-slate-700 dark:text-slate-200');
+
+  // Live Auction Status Overlay (Big Gavel Slam)
+  const statusOverlay = container.append('div')
+    .attr('class', 'absolute inset-0 z-20 pointer-events-none flex flex-col items-center justify-center bg-emerald-500/10 backdrop-blur-[2px] opacity-0 transition-all duration-300');
+
+  statusOverlay.append('span')
+    .attr('class', 'material-icons text-7xl text-emerald-600 dark:text-emerald-400 animate-bounce')
+    .text('gavel');
+
+  const statusText = statusOverlay.append('div')
+    .attr('class', 'text-5xl font-black tracking-widest text-emerald-600 dark:text-emerald-400 drop-shadow-md')
+    .text('SOLD!');
+
+  const teacherPanel = container.append('div')
+    .attr('class', 'w-full mt-4 flex items-center justify-center gap-3 bg-slate-100 dark:bg-zinc-800 p-3 rounded-xl border border-dashed border-blue-200 dark:border-zinc-700 h-0 overflow-hidden opacity-0 transition-all duration-300');
+
+  const playBtn = teacherPanel.append('button')
+    .attr('class', 'flex-1 h-11 rounded-lg font-bold text-sm text-white bg-blue-600 hover:bg-blue-700 flex items-center justify-center gap-2 shadow-sm transition active:scale-95')
+    .on('pointerdown', () => {
+      initAudio();
+      state.play = !state.play;
+    });
+
+  const playIcon = playBtn.append('span')
+    .attr('class', 'material-icons text-lg')
+    .text('play_arrow');
+
+  const playTextStr = playBtn.append('span')
+    .text('Start Timer');
+
+  const addBidBtn = teacherPanel.append('button')
+    .attr('class', 'px-4 h-11 rounded-lg font-bold text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 hover:bg-emerald-100 transition active:scale-95')
+    .on('pointerdown', () => {
+      initAudio();
+      state.currentBid += 100;
+      playClick(true);
+    });
+  
+  addBidBtn.append('span').attr('class', 'material-icons text-sm').text('add');
+  addBidBtn.append('span').text('+100');
+
+  const resetBtn = teacherPanel.append('button')
+    .attr('class', 'px-4 h-11 rounded-lg font-bold text-sm bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1 hover:bg-rose-100 transition active:scale-95')
+    .on('pointerdown', () => {
+      initAudio();
+      state.play = false;
+      state.timeLeft = state.duration;
+      state.isFinished = false;
+      state.currentBid = 1500;
+      playClick(false);
+    });
+
+  resetBtn.append('span').attr('class', 'material-icons text-sm').text('replay');
+  resetBtn.append('span').text('Reset');
+
+  // --- KEYPAD PIN MODAL ---
+  const modalMask = container.append('div')
+    .attr('class', 'absolute inset-0 z-40 bg-slate-900/40 backdrop-blur-md flex items-center justify-center opacity-0 pointer-events-none transition-all duration-300');
+
+  const pinModal = modalMask.append('div')
+    .attr('class', 'w-72 bg-white dark:bg-zinc-800 rounded-2xl p-5 shadow-2xl flex flex-col items-center border border-slate-100 dark:border-zinc-700');
+
+  pinModal.append('div')
+    .attr('class', 'text-sm font-bold text-slate-700 dark:text-slate-200 mb-1')
+    .text('🔒 Teacher Pin Required');
+
+  pinModal.append('div')
+    .attr('class', 'text-[11px] text-slate-400 mb-4 text-center')
+    .text('Enter PIN to access teacher controls.');
+
+  const pinDotsContainer = pinModal.append('div')
+    .attr('class', 'flex gap-3 mb-5');
+
+  const dotElements = Array.from({length: 4}).map(() => 
+    pinDotsContainer.append('div')
+      .attr('class', 'w-3.5 h-3.5 rounded-full border-2 border-slate-300 dark:border-zinc-600 transition-all')
+  );
+
+  const keypadGrid = pinModal.append('div')
+    .attr('class', 'grid grid-cols-3 gap-2.5 w-full mb-4');
+
+  let enteredPin = "";
+
+  const updatePinDots = () => {
+    dotElements.forEach((dot, index) => {
+      if (index < enteredPin.length) {
+        dot.classed('bg-blue-600 border-blue-600', true);
+      } else {
+        dot.classed('bg-blue-600 border-blue-600', false);
+      }
+    });
+  };
+
+  const handleKeyPress = (num) => {
+    playClick(false);
+    if (enteredPin.length < 4) {
+      enteredPin += num;
+      updatePinDots();
+    }
+    if (enteredPin.length === 4) {
+      setTimeout(() => {
+        if (enteredPin === state.teacherPIN) {
+          state.authenticated = true;
+          closePinModal();
+        } else {
+          // Failure Shake effect
+          anime({
+            targets: pinModal.node(),
+            translateX: [-10, 10, -5, 5, 0],
+            duration: 350,
+            easing: 'easeInOutQuad'
+          });
+          playBuzzer();
+          enteredPin = "";
+          updatePinDots();
+        }
+      }, 150);
+    }
+  };
+
+  // Generate numbers 1-9
+  for (let i = 1; i <= 9; i++) {
+    keypadGrid.append('button')
+      .attr('class', 'pin-btn h-11 rounded-lg bg-slate-50 dark:bg-zinc-700/60 font-bold text-lg text-slate-700 dark:text-slate-200')
+      .text(i)
+      .on('pointerdown', () => handleKeyPress(i.toString()));
+  }
+
+  // Clear button
+  keypadGrid.append('button')
+    .attr('class', 'pin-btn h-11 rounded-lg bg-rose-50 dark:bg-zinc-700/60 font-bold text-rose-600 text-sm')
+    .text('C')
+    .on('pointerdown', () => {
+      initAudio();
+      enteredPin = "";
+      updatePinDots();
+    });
+
+  // Zero
+  keypadGrid.append('button')
+    .attr('class', 'pin-btn h-11 rounded-lg bg-slate-50 dark:bg-zinc-700/60 font-bold text-lg text-slate-700 dark:text-slate-200')
+    .text('0')
+    .on('pointerdown', () => handleKeyPress('0'));
+
+  // Close (Cancel)
+  keypadGrid.append('button')
+    .attr('class', 'pin-btn h-11 rounded-lg bg-slate-100 dark:bg-zinc-700 font-bold text-slate-500 text-xs')
+    .text('Cancel')
+    .on('pointerdown', () => {
+      initAudio();
+      closePinModal();
+    });
+
+  const openPinModal = () => {
+    enteredPin = "";
+    updatePinDots();
+    modalMask.classed('opacity-100 pointer-events-auto', true);
+  };
+
+  const closePinModal = () => {
+    modalMask.classed('opacity-100 pointer-events-auto', false);
+  };
+
+  // Keyboard shortcut fallback: Ctrl + Shift + K triggers PIN pad
+  d3.select(window).on('keydown', (event) => {
+    if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      if (!state.authenticated) {
+        initAudio();
+        openPinModal();
+      }
+    }
+  });
+
+  // --- STATE SYSTEM SYNCHRONIZATION ---
+  const updateAll = () => {
+    // Synchronize displays
+    roomText.text(`Room #${state.roomNumber}`);
+    bidderNameText.text(`Team Leader: ${state.bidderName}`);
+    bidAmount.text(`${state.currentBid.toLocaleString()} ${state.currency}`);
+
+    // Progress circle dynamic calculations
+    const progressLimit = state.duration || 30;
+    const offset = Math.max(0, Math.min(283, (state.timeLeft / progressLimit) * 283));
+    progressFilled.style('stroke-dashoffset', 283 - offset);
+
+    // Authentication Guard View Transitions
+    if (state.authenticated) {
+      authBadge
+        .text('Teacher Authorized')
+        .attr('class', 'text-xs px-2.5 py-1 rounded-full font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300');
+      
+      lockBtn.classed('hidden', false);
+
+      // Expand Teacher Control Deck
+      teacherPanel
+        .style('height', '56px')
+        .style('opacity', '1')
+        .style('margin-top', '16px');
+    } else {
+      authBadge
+        .text('Student Mode (View Only)')
+        .attr('class', 'text-xs px-2.5 py-1 rounded-full font-semibold bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-400');
+      
+      lockBtn.classed('hidden', true);
+
+      // Hide Teacher Control Deck
+      teacherPanel
+        .style('height', '0px')
+        .style('opacity', '0')
+        .style('margin-top', '0px');
+    }
+
+    // Timer display text update
+    secondsDisplay.text(state.timeLeft < 10 ? `0${state.timeLeft}` : state.timeLeft);
+    
+    if (state.isFinished) {
+      statusOverlay.classed('opacity-100', true);
+      secondsDisplay.style('color', WH.getColor('--error'));
+    } else {
+      statusOverlay.classed('opacity-0', true);
+      secondsDisplay.style('color', 'inherit');
+    }
+
+    // Dynamic timer pulse during active run
+    if (state.play && state.timeLeft <= 5 && state.timeLeft > 0) {
+      anime({
+        targets: secondsDisplay.node(),
+        scale: [1, 1.25, 1],
+        duration: 400,
+        easing: 'easeInOutQuad'
+      });
+    }
+
+    // WH Widget HUD Synchronization
+    ui.setEditorial({
+      hud: [
+        { label: "Status", value: state.play ? "RUNNING" : state.isFinished ? "SOLD" : "AWAITING" },
+        { label: "Role", value: state.authenticated ? "Teacher" : "Student" },
+        { label: "Bids", value: `${state.currentBid.toLocaleString()} ${state.currency}` }
+      ]
+    });
+  };
+
+  let timerInterval = null;
+
+  state._subscribe('authenticated', updateAll);
+  state._subscribe('currency', updateAll);
+  state._subscribe('timeLeft', updateAll);
+  state._subscribe('isFinished', updateAll);
+  state._subscribe('currentBid', updateAll);
+  state._subscribe('duration', (v) => { if (!state.play) state.timeLeft = v; });
+
+  state._subscribe('play', (isPlaying) => {
+    initAudio();
+    if (isPlaying) {
+      state.isFinished = false;
+      if (state.timeLeft <= 0) state.timeLeft = state.duration;
+
+      playTextStr.text('Pause Timer');
+      playIcon.text('pause');
+      
+      timerInterval = setInterval(() => {
+        if (state.timeLeft > 0) {
+          state.timeLeft--;
+          playClick(state.timeLeft % 2 === 0);
+        } else {
+          state.play = false;
+          state.isFinished = true;
+          playGavelSlam();
+          clearInterval(timerInterval);
+        }
+      }, 1000);
+    } else {
+      playTextStr.text('Resume Timer');
+      playIcon.text('play_arrow');
+      if (timerInterval) clearInterval(timerInterval);
+    }
+    updateAll();
+  });
+
+  // Set default initial timer and refresh view
+  state.timeLeft = state.duration;
+  updateAll();
+
+  return ({ width, height, state }) => {
+    // Optional container size redesign loop
+  };
+});
+</script>
+
 </body>
 </html>
