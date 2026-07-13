@@ -559,7 +559,11 @@
         baseRef.child('students').on('value', (snapshot) => {
             window.studentsData = snapshot.val() || {};
             renderStudentList();
-            
+        baseRef.child('students').on('child_added', (snapshot) => {
+    if (USER_ROLE === 'teacher') {
+        playClickSound(); // 선생님 화면에서만 "띵" 소리 재생
+    }
+});    
             const keys = Object.keys(window.studentsData);
             if (keys.length > 0) {
                 document.getElementById('login-wait-area').classList.add('hidden');
@@ -692,6 +696,8 @@
                 alert(`❌ 등록되지 않은 이름입니다.`); return;
             }
             localStorage.setItem(`student_name_${CLASSROOM_ID}`, nameInput);
+          // [기능 추가] 로그인 성공 시 온라인 상태로 변경
+            baseRef.child('online_students').child(nameInput).set(true);
             applyStudentSession(nameInput);
         }
 
@@ -754,9 +760,18 @@
                 const timeLeft = endTimeStamp - now;
 
                 if (timeLeft <= 0) {
-                    clearInterval(window.timerInterval);
-                    document.getElementById('timer-display').innerText = "종료됨";
-                    window.isAuctionExpired = true; return;
+    clearInterval(window.timerInterval);
+    document.getElementById('timer-display').innerText = "종료됨";
+    window.isAuctionExpired = true;
+    
+    // 이 부분을 return; 앞에 넣으세요
+    if (USER_ROLE === 'teacher') {
+        if (window.internalCurrentBidder !== "없음") {
+            closeAuction(); 
+        } else {
+            cancelAuctionWithoutWinner();
+        }
+    } return;
                 }
                 const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
                 const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
@@ -776,63 +791,75 @@
         }
 
         function renderSeatGrid() {
-            const gridContainer = document.getElementById('seat-grid');
-            gridContainer.innerHTML = "";
+    const gridContainer = document.getElementById('seat-grid');
+    gridContainer.innerHTML = "";
+    const totalCols = window.configData.cols || 6;
+    const totalRows = window.configData.rows || 4;
+    gridContainer.style.gridTemplateColumns = `repeat(${totalCols}, minmax(0, 1fr))`;
+    const totalSeatsCount = totalCols * totalRows;
 
-            const totalCols = window.configData.cols || 6;
-            const totalRows = window.configData.rows || 4;
-            gridContainer.style.gridTemplateColumns = `repeat(${totalCols}, minmax(0, 1fr))`;
-
-            const totalSeatsCount = totalCols * totalRows;
-
-            for(let i = 1; i <= totalSeatsCount; i++) {
-                const seatName = `${i}번 좌석`;
-                const seatInfo = window.seatsData[seatName] || { status: 'empty', winner: '' };
-                const seatButton = document.createElement('button');
-                seatButton.type = "button";
-                
-                let baseClass = "h-14 sm:h-16 rounded-lg border flex flex-col items-center justify-center p-1 font-bold transition-all text-[10px] sm:text-xs text-center ";
-                
-                if (window.currentItemName === seatName) {
-                    baseClass += "bg-amber-400 border-amber-500 text-amber-950 auctioning-seat shadow-md";
-                    seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] text-red-600 font-extrabold mt-0.5">🔥 경매</span>`;
-                } else if (seatInfo.status === 'sold') {
-                    baseClass += "bg-green-500 border-green-600 text-white cursor-not-allowed shadow-sm";
-                    seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] bg-green-700 px-0.5 rounded mt-0.5 overflow-hidden max-w-full text-ellipsis whitespace-nowrap">${seatInfo.winner}</span>`;
-                    seatButton.disabled = true;
-                } else {
-                    baseClass += "bg-white border-gray-300 text-gray-600 hover:border-blue-400 hover:bg-blue-50 cursor-pointer";
-                    seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] text-gray-400 font-normal mt-0.5">대기</span>`;
+    for(let i = 1; i <= totalSeatsCount; i++) {
+        const seatName = `${i}번 좌석`;
+        const seatInfo = window.seatsData[seatName] || { status: 'empty', winner: '', finalPrice: 0 };
+        const seatButton = document.createElement('button');
+        seatButton.type = "button";
+        
+        let baseClass = "h-14 sm:h-16 rounded-lg border flex flex-col items-center justify-center p-1 font-bold transition-all text-[10px] sm:text-xs text-center ";
+        
+        if (window.currentItemName === seatName) {
+            baseClass += "bg-amber-400 border-amber-500 text-amber-950 auctioning-seat shadow-md";
+            seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] text-red-600 font-extrabold mt-0.5">🔥 경매중</span>`;
+        } else if (seatInfo.status === 'sold') {
+            baseClass += "bg-green-500 border-green-600 text-white cursor-pointer shadow-sm";
+            seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] bg-green-700 px-0.5 rounded mt-0.5">${seatInfo.winner}<br>${seatInfo.finalPrice}${window.configData.currency}</span>`;
+            seatButton.onclick = () => {
+                if(confirm(`${seatName}을(를) 초기화하고 재사용하시겠습니까?`)) {
+                    baseRef.child(`seats/${seatName}`).update({ status: 'empty', winner: '', finalPrice: 0 });
                 }
-
-                seatButton.className = baseClass;
-                seatButton.onclick = () => {
-                    playClickSound();
-                    if (sessionStorage.getItem(`teacher_auth_${CLASSROOM_ID}`) === 'true') {
-                        document.getElementById('new-item-name').value = seatName;
-                        const existingMinLimit = window.seatsData[seatName]?.minLimit;
-                        document.getElementById('new-item-min-limit').value = (existingMinLimit !== undefined) ? existingMinLimit : "";
-                    }
-                };
-                gridContainer.appendChild(seatButton);
-            }
+            };
+        } else {
+            baseClass += "bg-white border-gray-300 text-gray-600 hover:border-blue-400 hover:bg-blue-50 cursor-pointer";
+            seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] text-gray-400 font-normal mt-0.5">대기</span>`;
+            seatButton.onclick = () => {
+                playClickSound();
+                if (sessionStorage.getItem(`teacher_auth_${CLASSROOM_ID}`) === 'true') {
+                    document.getElementById('new-item-name').value = seatName;
+                }
+            };
         }
-
+        seatButton.className = baseClass;
+        gridContainer.appendChild(seatButton);
+    }
+}
+// [여기까지만 딱 덮어씌우세요]
         function renderStudentList() {
-            const listDiv = document.getElementById('teacher-student-list');
-            listDiv.innerHTML = "";
-            const keys = Object.keys(window.studentsData);
-            if(keys.length === 0) {
-                listDiv.innerHTML = '<p class="text-gray-400 text-center">등록된 학생이 없습니다.</p>'; return;
-            }
-            keys.forEach(name => {
-                const money = window.studentsData[name];
-                const item = document.createElement('div');
-                item.className = "flex justify-between items-center bg-gray-100 p-1 rounded font-mono";
-                item.innerHTML = `<span>👤 <b>${name}</b></span><span class="text-blue-600 font-bold">${parseInt(money).toLocaleString()} ${window.configData.currency}</span>`;
-                listDiv.appendChild(item);
-            });
-        }
+    const listDiv = document.getElementById('teacher-student-list');
+    listDiv.innerHTML = "";
+    
+    // 온라인 학생 데이터를 가져옵니다
+    baseRef.child('online_students').once('value', (snapshot) => {
+        const onlineStudents = snapshot.val() || {};
+        const keys = Object.keys(window.studentsData);
+
+        keys.forEach(name => {
+            const isOnline = onlineStudents[name] === true; // 온라인 여부 확인
+            const item = document.createElement('div');
+            item.className = "flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100";
+            
+            // 초록 불 아이콘 추가
+            const statusColor = isOnline ? "bg-green-500" : "bg-gray-300";
+            
+            item.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full ${statusColor}"></div>
+                    <span>👤 <b>${name}</b></span>
+                </div>
+                <span class="text-blue-600 font-bold">${parseInt(window.studentsData[name]).toLocaleString()}</span>
+            `;
+            listDiv.appendChild(item);
+        });
+    });
+}
 
         // 📜 낙찰/유찰 기록 렌더링 (최근 기록이 위로 오도록 정렬) - 교사 인증 후에만 호출됨
         function renderAuctionLog(logsObj) {
@@ -1025,6 +1052,13 @@
             alert("초기화 완료.");
             location.reload();
         }
+      // 브라우저를 닫을 때 온라인 상태 해제
+window.addEventListener('beforeunload', () => {
+    const name = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
+    if (name) {
+        baseRef.child('online_students').child(name).set(false);
+    }
+});
     </script>
 </body>
 </html>
