@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>교실 실시간 좌석 경매 시스템 (교사 기본 버전)</title>
+    <title>교실 실시간 좌석 경매 시스템 (블라인드 기능 추가)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
@@ -24,7 +24,7 @@
 </head>
 <body class="bg-gray-100 p-4 sm:p-6 text-gray-800 relative min-h-screen">
 
-    <!-- 🚪 학생 입장 레이어 (교사 모드일 때는 보이지 않음) -->
+    <!-- 🚪 학생 입장 레이어 -->
     <div id="login-overlay" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 transition-all duration-300 hidden">
         <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-sm mx-4 text-center">
             <span class="text-4xl">👨‍🎓</span>
@@ -83,10 +83,8 @@
                     🖥️ 칠 판 (FRONT)
                 </div>
 
-                <!-- 자리가 동적으로 배치될 그리드 스냅샷 -->
-                <div id="seat-grid" class="grid gap-2 max-w-xl mx-auto">
-                    <!-- 자바스크립트 동적 렌더링 -->
-                </div>
+                <!-- 자리가 동적으로 배치될 그리드 -->
+                <div id="seat-grid" class="grid gap-2 max-w-xl mx-auto"></div>
 
                 <!-- 📱 메인 QR 코드 영역 -->
                 <div class="mt-8 p-4 bg-white border rounded-xl flex flex-col sm:flex-row items-center justify-center gap-4 shadow-sm">
@@ -118,12 +116,12 @@
                             <span id="current-bidder" class="font-bold text-base text-amber-400">비공개 🔒</span>
                         </div>
                         <div>
-                            <span class="text-xs text-slate-400 block font-medium">현재 가격</span>
+                            <span class="text-xs text-slate-400 block font-medium">현재 최고 입찰액</span>
                             <span class="font-bold text-lg text-emerald-400"><span id="current-price">0</span> <span class="currency-txt">카비</span></span>
                         </div>
                     </div>
                     
-                    <!-- 📉 개별 좌석 최소가 안내 표시 -->
+                    <!-- 개별 좌석 최소가 안내 표시 -->
                     <div class="text-[11px] text-slate-400 mt-2">
                         🚨 이 좌석의 입찰 하한선: <span id="current-seat-min-limit" class="text-amber-400 font-bold">0</span> <span class="currency-txt">카비</span>
                     </div>
@@ -133,7 +131,7 @@
                 <div id="panel-student" class="hidden space-y-4">
                     <div class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 rounded-xl shadow-sm flex justify-between items-center">
                         <div>
-                            <p class="text-[11px] text-blue-200 font-medium">내 정보 (실시간 입찰액 반영)</p>
+                            <p class="text-[11px] text-blue-200 font-medium">내 정보</p>
                             <h4 class="text-base font-bold mt-0.5">
                                 👤 <span id="my-profile-name">-</span> 학생
                             </h4>
@@ -149,7 +147,7 @@
                     <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
                         <div>
                             <label class="block text-sm font-bold text-slate-600 mb-1">💰 입찰할 금액 입력 (<span class="currency-txt">카비</span>)</label>
-                            <input type="number" id="student-bid-input" placeholder="현재 가격보다 높은 금액 입력" class="w-full rounded-lg border border-gray-300 p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-red-600 text-lg">
+                            <input type="number" id="student-bid-input" placeholder="원하는 금액 입력" class="w-full rounded-lg border border-gray-300 p-2.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-red-600 text-lg">
                         </div>
                     </div>
 
@@ -194,7 +192,15 @@
                                 </div>
                             </div>
 
-                            <!-- 🪑 가로 열 / 세로 행 조절 -->
+                            <!-- 🔒 블라인드 경매 옵션 추가 -->
+                            <div class="bg-white p-2.5 rounded border border-amber-300/60 flex items-center gap-2 mt-1">
+                                <input type="checkbox" id="setting-reveal-price" checked class="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500">
+                                <label for="setting-reveal-price" class="font-bold text-slate-800 text-xs cursor-pointer select-none">
+                                    📢 학생들에게 최고 입찰액을 실시간으로 공개합니다.
+                                </label>
+                            </div>
+
+                            <!-- 가로 열 / 세로 행 조절 -->
                             <div class="grid grid-cols-2 gap-2 pt-1">
                                 <div>
                                     <label class="block font-bold text-gray-700 mb-1">↔️ 가로 칸수 (열)</label>
@@ -261,7 +267,6 @@
 
     <!-- 스크립트 엔진 -->
     <script>
-        // 초기화 로직: 파라미터가 없으면 무조건 'teacher'로 강제 설정하여 교사용 기본 페이지 완성
         function initRoomAndRole() {
             const params = new URLSearchParams(window.location.search);
             let room = params.get('room');
@@ -272,7 +277,7 @@
                 params.set('room', room);
             }
             if (!role) {
-                role = 'teacher'; // 주소창에 아무것도 입력하지 않았을 때 기본값은 교사!
+                role = 'teacher';
                 params.set('role', role);
             }
             
@@ -282,7 +287,6 @@
 
         const { room: CLASSROOM_ID, role: USER_ROLE } = initRoomAndRole(); 
         
-        // Firebase 구성
         const firebaseConfig = {
             apiKey: "AIzaSyDZ2BMCd3kspcmWnH3_BWUIsUBU3TGNikc",
             authDomain: "gyungmae.firebaseapp.com",
@@ -298,12 +302,11 @@
         const database = firebase.database();
         const baseRef = database.ref(`auctions_rooms/${CLASSROOM_ID}`);
 
-        // 글로벌 상태변수
         window.currentPrice = 0;
         window.currentItemName = "";
         window.seatsData = {}; 
         window.studentsData = {}; 
-        window.configData = { currency: "카비", minBid: 10, cols: 6, rows: 4 };
+        window.configData = { currency: "카비", minBid: 10, cols: 6, rows: 4, revealPrice: true };
         window.timerInterval = null; 
         window.isAuctionExpired = false; 
         window.internalCurrentBidder = "없음";
@@ -345,17 +348,15 @@
             document.getElementById('room-display-tag').innerText = `🔢 교실 방 번호: [ ${CLASSROOM_ID} ]`;
             document.getElementById('login-room-indicator').innerText = `[접속 방 번호: ${CLASSROOM_ID}]`;
             
-            // 🌟 학생들이 스캔할 QR 코드 전용 링크 생성 (role=student 강제 고정)
             const studentUrl = `${window.location.origin}${window.location.pathname}?room=${CLASSROOM_ID}&role=student`;
             document.getElementById('share-url-text').innerText = studentUrl;
             document.getElementById('qr-code-img').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(studentUrl)}`;
             
-            // UI 초기화 진입 분기점
             if (USER_ROLE === 'student') {
-                document.getElementById('login-overlay').classList.remove('hidden'); // 학생만 오버레이 활성화
+                document.getElementById('login-overlay').classList.remove('hidden');
                 switchTab('student');
             } else {
-                document.getElementById('login-overlay').classList.add('hidden'); // 교사는 패스
+                document.getElementById('login-overlay').classList.add('hidden');
                 switchTab('teacher');
             }
 
@@ -368,7 +369,6 @@
             }
         };
 
-        // 🛠️ 교사 인증
         function authOrCreateTeacher() {
             playClickSound();
             const pwdInput = document.getElementById('teacher-pwd-input').value.trim();
@@ -421,9 +421,10 @@
             const minBid = parseInt(document.getElementById('setting-min-bid').value) || 0;
             const cols = parseInt(document.getElementById('txt-cols').innerText);
             const rows = parseInt(document.getElementById('txt-rows').innerText);
+            const revealPrice = document.getElementById('setting-reveal-price').checked;
 
-            baseRef.child('config').set({ currency, minBid, cols, rows }).then(() => {
-                alert("💾 화폐 단위, 최소 입찰금 및 자릿수 구조가 실시간 반영되었습니다!");
+            baseRef.child('config').set({ currency, minBid, cols, rows, revealPrice }).then(() => {
+                alert("💾 설정이 실시간 반영되었습니다!");
             });
         }
 
@@ -436,14 +437,14 @@
                 document.getElementById('setting-min-bid').value = data.minBid;
                 document.getElementById('txt-cols').innerText = data.cols;
                 document.getElementById('txt-rows').innerText = data.rows;
+                document.getElementById('setting-reveal-price').checked = data.revealPrice ?? true;
                 document.getElementById('grid-info-display').innerText = `${data.cols} × ${data.rows}`;
                 
                 const items = document.getElementsByClassName('currency-txt');
-                for(let i=0; i<items.length; i++) {
-                    items[i].innerText = data.currency;
-                }
+                for(let i=0; i<items.length; i++) { items[i].innerText = data.currency; }
                 updateCurrentSeatMinLimitLabel();
             }
+            refreshPriceDisplay();
             renderSeatGrid();
         });
 
@@ -480,7 +481,6 @@
                 window.internalCurrentBidder = rawBidder;
                 document.getElementById('current-bidder').innerText = (rawBidder === "없음" || rawBidder === "-") ? "없음" : "비공개 🔒";
 
-                document.getElementById('current-price').innerText = (data.price || 0).toLocaleString();
                 window.currentPrice = data.price || 0;
                 
                 if(data.endTime) {
@@ -492,6 +492,7 @@
                 }
                 updateCurrentSeatMinLimitLabel();
             }
+            refreshPriceDisplay();
             const currentLoggedIn = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
             if (currentLoggedIn) updateMyBudgetUI(currentLoggedIn);
             renderSeatGrid();
@@ -501,6 +502,20 @@
             window.seatsData = snapshot.val() || {};
             renderSeatGrid();
         });
+
+        // 🔒 블라인드 처리 여부에 따른 실시간 텍스트 변환기
+        function refreshPriceDisplay() {
+            const isTeacher = (USER_ROLE === 'teacher');
+            const isRevealed = (window.configData.revealPrice ?? true);
+
+            if (isTeacher || isRevealed) {
+                // 교사이거나 설정이 '공개'일 때 정상 노출
+                document.getElementById('current-price').innerText = window.currentPrice.toLocaleString();
+            } else {
+                // 학생이고 설정이 '비공개'일 때 마스킹 처리
+                document.getElementById('current-price').innerText = "비공개 🔒";
+            }
+        }
 
         function updateCurrentSeatMinLimitLabel() {
             if(window.currentItemName && window.currentItemName !== "진행 중인 경매 없음") {
@@ -517,8 +532,7 @@
             if (!nameInput) { alert("이름을 입력해 주세요."); return; }
 
             if (!window.studentsData || window.studentsData[nameInput] === undefined) {
-                alert(`❌ 등록되지 않은 이름입니다.`);
-                return;
+                alert(`❌ 등록되지 않은 이름입니다.`); return;
             }
             localStorage.setItem(`student_name_${CLASSROOM_ID}`, nameInput);
             applyStudentSession(nameInput);
@@ -530,7 +544,6 @@
             updateMyBudgetUI(name);
         }
 
-        // 학생 로그아웃 및 오버레이 컴백 강제성 부여
         function logoutStudent() {
             playClickSound();
             localStorage.removeItem(`student_name_${CLASSROOM_ID}`);
@@ -571,6 +584,7 @@
                 teacherPanel.classList.remove('hidden');
                 studentPanel.classList.add('hidden');
             }
+            refreshPriceDisplay();
         }
 
         function startLocalTimer(endTimeStamp) {
@@ -585,8 +599,7 @@
                 if (timeLeft <= 0) {
                     clearInterval(window.timerInterval);
                     document.getElementById('timer-display').innerText = "종료됨";
-                    window.isAuctionExpired = true; 
-                    return;
+                    window.isAuctionExpired = true; return;
                 }
                 const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
                 const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
@@ -644,8 +657,7 @@
             listDiv.innerHTML = "";
             const keys = Object.keys(window.studentsData);
             if(keys.length === 0) {
-                listDiv.innerHTML = '<p class="text-gray-400 text-center">등록된 학생이 없습니다.</p>';
-                return;
+                listDiv.innerHTML = '<p class="text-gray-400 text-center">등록된 학생이 없습니다.</p>'; return;
             }
             keys.forEach(name => {
                 const money = window.studentsData[name];
@@ -708,19 +720,16 @@
             const currentSeatMin = (window.seatsData && window.seatsData[window.currentItemName]) ? (window.seatsData[window.currentItemName].minLimit ?? window.configData.minBid) : window.configData.minBid;
 
             if (customBidPrice < currentSeatMin) {
-                alert(`이 좌석의 최소 입찰 제한액은 ${currentSeatMin}${window.configData.currency} 입니다.`);
-                return;
+                alert(`이 좌석의 최소 입찰 제한액은 ${currentSeatMin}${window.configData.currency} 입니다.`); return;
             }
 
             if (customBidPrice <= window.currentPrice) {
-                alert(`현재가보다 높아야 합니다.`);
-                return;
+                alert(`현재가보다 높아야 합니다.`); return;
             }
 
             const rawBudget = window.studentsData[name];
             if (customBidPrice > rawBudget) {
-                alert(`보유 총액을 초과할 수 없습니다.`);
-                return;
+                alert(`보유 총액을 초과할 수 없습니다.`); return;
             }
 
             baseRef.child('current').update({ bidder: name, price: customBidPrice }).then(() => {
