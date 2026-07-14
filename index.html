@@ -965,25 +965,42 @@
             clonedTarget.style.top = '-9999px';
             document.body.appendChild(clonedTarget);
             
-            // Computed 스타일을 inline으로 변환 (oklch → rgb 자동 변환)
+            // 1단계: Computed 스타일을 inline으로 변환
             const allElements = clonedTarget.querySelectorAll('*');
             allElements.forEach(el => {
-                const computed = window.getComputedStyle(el);
-                el.style.color = computed.color;
-                el.style.backgroundColor = computed.backgroundColor;
-                el.style.borderColor = computed.borderColor;
-                el.style.borderTopColor = computed.borderTopColor;
-                el.style.borderRightColor = computed.borderRightColor;
-                el.style.borderBottomColor = computed.borderBottomColor;
-                el.style.borderLeftColor = computed.borderLeftColor;
-                el.style.boxShadow = computed.boxShadow;
+                try {
+                    const computed = window.getComputedStyle(el);
+                    el.style.backgroundColor = computed.backgroundColor;
+                    el.style.color = computed.color;
+                    el.style.borderColor = computed.borderColor;
+                    el.style.borderTopColor = computed.borderTopColor;
+                    el.style.borderRightColor = computed.borderRightColor;
+                    el.style.borderBottomColor = computed.borderBottomColor;
+                    el.style.borderLeftColor = computed.borderLeftColor;
+                    el.style.boxShadow = computed.boxShadow;
+                } catch(e) {
+                    // 오류 무시
+                }
+                
+                // 2단계: 클래스 제거 (Tailwind oklch 제거)
+                el.className = '';
             });
             
-            const rootComputed = window.getComputedStyle(clonedTarget);
-            clonedTarget.style.color = rootComputed.color;
-            clonedTarget.style.backgroundColor = rootComputed.backgroundColor;
+            try {
+                const rootComputed = window.getComputedStyle(clonedTarget);
+                clonedTarget.style.backgroundColor = rootComputed.backgroundColor;
+                clonedTarget.style.color = rootComputed.color;
+            } catch(e) {
+                // 오류 무시
+            }
+            clonedTarget.className = '';
             
-            html2canvas(clonedTarget, { backgroundColor: '#f9fafb', scale: 2 }).then(canvas => {
+            html2canvas(clonedTarget, { 
+                backgroundColor: '#f9fafb', 
+                scale: 2,
+                useCORS: true,
+                allowTaint: true
+            }).then(canvas => {
                 const link = document.createElement('a');
                 const dateStr = new Date().toISOString().slice(0, 10);
                 link.download = `좌석배치도_${CLASSROOM_ID}_${dateStr}.png`;
