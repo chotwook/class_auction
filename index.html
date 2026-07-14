@@ -956,7 +956,34 @@
                 alert("이미지 생성 기능을 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.");
                 return;
             }
-            html2canvas(target, { backgroundColor: '#f9fafb', scale: 2 }).then(canvas => {
+            
+            // 캡처용 클론 생성
+            const clonedTarget = target.cloneNode(true);
+            clonedTarget.style.display = 'block';
+            clonedTarget.style.position = 'absolute';
+            clonedTarget.style.left = '-9999px';
+            clonedTarget.style.top = '-9999px';
+            document.body.appendChild(clonedTarget);
+            
+            // Computed 스타일을 inline으로 변환 (oklch → rgb 자동 변환)
+            const allElements = clonedTarget.querySelectorAll('*');
+            allElements.forEach(el => {
+                const computed = window.getComputedStyle(el);
+                el.style.color = computed.color;
+                el.style.backgroundColor = computed.backgroundColor;
+                el.style.borderColor = computed.borderColor;
+                el.style.borderTopColor = computed.borderTopColor;
+                el.style.borderRightColor = computed.borderRightColor;
+                el.style.borderBottomColor = computed.borderBottomColor;
+                el.style.borderLeftColor = computed.borderLeftColor;
+                el.style.boxShadow = computed.boxShadow;
+            });
+            
+            const rootComputed = window.getComputedStyle(clonedTarget);
+            clonedTarget.style.color = rootComputed.color;
+            clonedTarget.style.backgroundColor = rootComputed.backgroundColor;
+            
+            html2canvas(clonedTarget, { backgroundColor: '#f9fafb', scale: 2 }).then(canvas => {
                 const link = document.createElement('a');
                 const dateStr = new Date().toISOString().slice(0, 10);
                 link.download = `좌석배치도_${CLASSROOM_ID}_${dateStr}.png`;
@@ -965,8 +992,12 @@
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
+                document.body.removeChild(clonedTarget);
             }).catch(err => {
                 alert("이미지 저장 중 오류가 발생했습니다: " + err.message);
+                if (document.body.contains(clonedTarget)) {
+                    document.body.removeChild(clonedTarget);
+                }
             });
         }
 
