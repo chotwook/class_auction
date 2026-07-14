@@ -23,6 +23,10 @@
         .auctioning-seat {
             animation: pulse 1.5s infinite ease-in-out;
         }
+        @keyframes blink {
+            0%, 49%, 100% { opacity: 1; }
+            50%, 99% { opacity: 0.5; }
+        }
     </style>
 </head>
 <body class="bg-gray-100 p-4 sm:p-6 text-gray-800 relative min-h-screen">
@@ -100,6 +104,18 @@
                         <p id="share-url-text" class="text-[10px] text-blue-500 font-mono mt-2 break-all select-all bg-slate-50 p-1 rounded border"></p>
                     </div>
                     <img id="qr-code-img" src="" alt="접속 QR코드" class="w-24 h-24 border p-1 rounded bg-white">
+                </div>
+
+                <!-- 🟢 실시간 학생 접속 현황 패널 -->
+                <div class="mt-6 p-4 bg-gradient-to-r from-emerald-50 to-green-50 border-2 border-green-200 rounded-xl shadow-sm">
+                    <div class="flex items-center gap-2 mb-3 pb-2 border-b border-green-200">
+                        <span class="text-lg">🟢</span>
+                        <h4 class="font-bold text-green-800 text-sm">실시간 학생 접속 현황</h4>
+                        <span id="online-count-badge" class="ml-auto text-xs bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">0명</span>
+                    </div>
+                    <div id="online-students-panel" class="space-y-1.5 max-h-48 overflow-y-auto">
+                        <p class="text-xs text-gray-500 text-center py-4">학생 접속을 기다리는 중...</p>
+                    </div>
                 </div>
             </div>
 
@@ -503,6 +519,10 @@
             }
         }
 
+        baseRef.child('online_students').on('value', (snapshot) => {
+            renderOnlineStudentsPanel();
+        });
+
         function adjustGrid(type, amount) {
             playClickSound();
             if(type === 'cols') {
@@ -813,7 +833,11 @@
             baseClass += "bg-green-500 border-green-600 text-white cursor-pointer shadow-sm";
             seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] bg-green-700 px-0.5 rounded mt-0.5">${seatInfo.winner}<br>${seatInfo.finalPrice}${window.configData.currency}</span>`;
             seatButton.onclick = () => {
-                if(confirm(`${seatName}을(를) 초기화하고 재사용하시겠습니까?`)) {
+                if(confirm(`${seatName}을(를) 초기화하고 재사용하시겠습니까?\n\n💰 ${seatInfo.winner} 학생에게 ${seatInfo.finalPrice}${window.configData.currency} 반환됩니다.`)) {
+                    if(window.studentsData && window.studentsData[seatInfo.winner] !== undefined) {
+                        const newBalance = window.studentsData[seatInfo.winner] + seatInfo.finalPrice;
+                        baseRef.child(`students/${seatInfo.winner}`).set(newBalance);
+                    }
                     baseRef.child(`seats/${seatName}`).update({ status: 'empty', winner: '', finalPrice: 0 });
                 }
             };
@@ -832,6 +856,42 @@
     }
 }
 // [여기까지만 딱 덮어씌우세요]
+        // 🟢 실시간 학생 접속 현황 패널 렌더링
+        function renderOnlineStudentsPanel() {
+            const panel = document.getElementById('online-students-panel');
+            const badge = document.getElementById('online-count-badge');
+            if (!panel || !badge) return;
+            panel.innerHTML = '';
+            
+            baseRef.child('online_students').once('value', (snapshot) => {
+                const onlineStudents = snapshot.val() || {};
+                const onlineList = [];
+                
+                for (const name in onlineStudents) {
+                    if (onlineStudents[name] === true) {
+                        onlineList.push(name);
+                    }
+                }
+                
+                badge.innerText = `${onlineList.length}명`;
+                
+                if (onlineList.length === 0) {
+                    panel.innerHTML = '<p class="text-xs text-gray-500 text-center py-3">학생이 아직 접속하지 않음</p>';
+                    return;
+                }
+                
+                onlineList.forEach(name => {
+                    const item = document.createElement('div');
+                    item.className = "flex items-center gap-2 bg-white p-2 rounded border border-green-100";
+                    item.innerHTML = `
+                        <div class="w-2 h-2 bg-green-500 rounded-full" style="animation: blink 1.5s infinite;"></div>
+                        <span class="text-xs font-bold text-slate-700">${name}</span>
+                    `;
+                    panel.appendChild(item);
+                });
+            });
+        }
+
         function renderStudentList() {
     const listDiv = document.getElementById('teacher-student-list');
     listDiv.innerHTML = "";
