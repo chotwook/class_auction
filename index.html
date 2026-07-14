@@ -961,7 +961,10 @@
                 const dateStr = new Date().toISOString().slice(0, 10);
                 link.download = `좌석배치도_${CLASSROOM_ID}_${dateStr}.png`;
                 link.href = canvas.toDataURL('image/png');
+                link.style.display = 'none';
+                document.body.appendChild(link);
                 link.click();
+                document.body.removeChild(link);
             }).catch(err => {
                 alert("이미지 저장 중 오류가 발생했습니다: " + err.message);
             });
