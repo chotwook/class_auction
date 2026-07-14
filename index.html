@@ -23,6 +23,14 @@
         .auctioning-seat {
             animation: pulse 1.5s infinite ease-in-out;
         }
+        
+        @keyframes blink {
+            0%, 49%, 100% { opacity: 1; }
+            50%, 99% { opacity: 0.5; }
+        }
+        .online-indicator {
+            animation: blink 1.5s infinite;
+        }
     </style>
 </head>
 <body class="bg-gray-100 p-4 sm:p-6 text-gray-800 relative min-h-screen">
@@ -101,6 +109,18 @@
                     </div>
                     <img id="qr-code-img" src="" alt="접속 QR코드" class="w-24 h-24 border p-1 rounded bg-white">
                 </div>
+
+                <!-- 🟢 실시간 학생 접속 현황 패널 (새로 추가됨) -->
+                <div class="mt-6 p-4 bg-gradient-to-r from-emerald-50 to-green-50 border-2 border-green-200 rounded-xl shadow-sm">
+                    <div class="flex items-center gap-2 mb-3 pb-2 border-b border-green-200">
+                        <span class="text-lg">🟢</span>
+                        <h4 class="font-bold text-green-800 text-sm">실시간 학생 접속 현황</h4>
+                        <span id="online-count-badge" class="ml-auto text-xs bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">0명</span>
+                    </div>
+                    <div id="online-students-panel" class="space-y-1.5 max-h-48 overflow-y-auto">
+                        <p class="text-xs text-gray-500 text-center py-4">학생 접속을 기다리는 중...</p>
+                    </div>
+                </div>
             </div>
 
 
@@ -149,6 +169,11 @@
                         <button onclick="logoutStudent()" class="bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-md text-xs font-medium transition-all">
                             이름 변경
                         </button>
+                    </div>
+
+                    <div id="currentAuctionDisplay" class="bg-amber-50 p-4 rounded-xl border border-amber-200 text-center space-y-2">
+                        <p class="text-xs text-amber-700 font-bold">현재 경매 중인 좌석</p>
+                        <p id="current-auction-seat" class="text-2xl font-black text-amber-600">진행 중인 경매 없음</p>
                     </div>
 
                     <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm space-y-3">
@@ -203,6 +228,22 @@
                                 <span class="block text-[10px] font-bold text-slate-300 mb-1">📋 좌석별 최소 입찰액 현황</span>
                                 <div class="max-h-24 overflow-y-auto text-[11px] space-y-0.5" id="teacher-seat-minlimit-list">
                                     <p class="text-slate-500 text-center">아직 설정된 좌석이 없습니다.</p>
+                                </div>
+                            </div>
+
+                            <!-- ⏱️ 타이머 종료 시 자동 처리 옵션 -->
+                            <div class="bg-indigo-900/40 p-2 rounded border border-indigo-500/50">
+                                <div class="flex items-center gap-2">
+                                    <input type="checkbox" id="setting-auto-close" checked class="w-3 h-3">
+                                    <label for="setting-auto-close" class="text-xs font-bold text-slate-200 cursor-pointer select-none">
+                                        ⏱️ 시간 종료 시 자동 낙찰 (입찰자 있을 때)
+                                    </label>
+                                </div>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <input type="checkbox" id="setting-auto-cancel" checked class="w-3 h-3">
+                                    <label for="setting-auto-cancel" class="text-xs font-bold text-slate-200 cursor-pointer select-none">
+                                        ⏱️ 시간 종료 시 자동 유찰 (입찰자 없을 때)
+                                    </label>
                                 </div>
                             </div>
 
@@ -279,7 +320,7 @@
                                     </div>
                                 </div>
                                 <div>
-                                    <label class="block font-bold text-gray-700 mb-1">↕️ 세로 줄수 (행)</label>
+                                    <label class="block font-bold text-gray-700 mb-1">⬆️ 세로 칸수 (행)</label>
                                     <div class="flex items-center border rounded bg-white overflow-hidden justify-between">
                                         <button onclick="adjustGrid('rows', -1)" class="bg-gray-200 px-3 py-1 font-black text-gray-600 hover:bg-gray-300">-</button>
                                         <span id="txt-rows" class="font-bold text-slate-800 text-center flex-1">4</span>
@@ -288,501 +329,436 @@
                                 </div>
                             </div>
 
-                            <button onclick="saveTeacherSettings()" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded shadow-sm transition-all text-center mt-1">
-                                💾 설정 및 구조 저장/일괄 적용
+                            <button onclick="saveConfig()" class="w-full bg-amber-700 hover:bg-amber-800 text-white p-2.5 rounded font-bold transition-all">
+                                ✅ 설정 저장
                             </button>
                         </div>
 
-                        <!-- 학생 등록창 -->
-                        <div class="bg-white p-3 rounded-lg border border-gray-200 space-y-2">
-                            <span class="block text-xs font-bold text-slate-700">📋 학생 일괄 등록 (이름,금액)</span>
-                            <textarea id="teacher-bulk-input" rows="2" placeholder="이름,금액 (한 줄에 한 명씩)&#10;예시: 홍길동,500" class="w-full p-2 border rounded text-xs font-mono bg-slate-50 focus:bg-white outline-none"></textarea>
-                            <button onclick="importBulkStudents()" class="w-full bg-slate-700 hover:bg-slate-800 text-white py-1.5 rounded text-xs font-bold transition-all">
-                                명단 일괄 등록하기
+                        <!-- 👥 학생 명단 관리 -->
+                        <div class="bg-blue-50 p-3 rounded-xl border border-blue-200 space-y-2">
+                            <span class="block font-black text-blue-900 text-sm border-b pb-1">👥 학생 명단 관리</span>
+
+                            <div>
+                                <label class="text-xs font-bold text-blue-900 block mb-1">📝 학생 명단 (이름, 초기금액 / 한 줄에 한 명)</label>
+                                <textarea id="teacher-bulk-input" placeholder="예&#10;김철수,100000&#10;이영희,100000&#10;박민수,100000" class="w-full h-32 p-2 border rounded text-xs bg-white font-mono resize-none"></textarea>
+                            </div>
+
+                            <button onclick="importBulkStudents()" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2 rounded font-bold text-xs transition-all">
+                                📥 일괄 등록
                             </button>
-                            
-                            <div class="max-h-20 overflow-y-auto border-t pt-2 mt-2 text-xs space-y-1" id="teacher-student-list">
-                                <p class="text-gray-400 text-center">등록된 학생이 없습니다.</p>
+                        </div>
+
+                        <!-- 🏆 낙찰/유찰 기록 -->
+                        <div class="bg-purple-50 p-3 rounded-xl border border-purple-200 space-y-2">
+                            <span class="block font-black text-purple-900 text-sm border-b pb-1">🏆 낙찰/유찰 기록</span>
+
+                            <div id="teacher-auction-log-list" class="bg-white rounded border max-h-40 overflow-y-auto space-y-1 p-1.5">
+                                <p class="text-gray-400 text-center text-xs">기록이 없습니다.</p>
                             </div>
                         </div>
 
-                        <!-- 🖼️ 좌석 배치도 이미지 저장 -->
-                        <div class="bg-white p-3 rounded-lg border border-gray-200 space-y-2">
-                            <span class="block text-xs font-bold text-slate-700">🖼️ 좌석 배치도 이미지로 저장</span>
-                            <button onclick="exportSeatLayoutImage()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 rounded text-xs font-bold transition-all">
-                                📸 현재 좌석 배치도 PNG로 저장
-                            </button>
-                        </div>
+                        <!-- 📊 학생 목록 -->
+                        <div class="bg-emerald-50 p-3 rounded-xl border border-emerald-200 space-y-2">
+                            <div class="flex justify-between items-center border-b pb-1">
+                                <span class="block font-black text-emerald-900 text-sm">👥 학생 목록</span>
+                                <button onclick="exportSeatLayoutImage()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-[10px] font-bold transition-all">
+                                    🖼️ 이미지 저장
+                                </button>
+                            </div>
 
-                        <!-- 📜 낙찰/유찰 기록 (교사 인증 후에만 데이터를 불러옴) -->
-                        <div class="bg-white p-3 rounded-lg border border-gray-200 space-y-2">
-                            <span class="block text-xs font-bold text-slate-700">📜 낙찰/유찰 기록 (교사 전용)</span>
-                            <div class="max-h-40 overflow-y-auto border-t pt-2 mt-1 text-xs space-y-1" id="teacher-auction-log-list">
-                                <p class="text-gray-400 text-center">기록이 없습니다.</p>
+                            <div id="teacher-student-list" class="bg-white rounded border max-h-40 overflow-y-auto space-y-1 p-1.5">
+                                <p class="text-gray-400 text-center text-xs">등록된 학생이 없습니다.</p>
                             </div>
                         </div>
                     </div>
                 </div>
-
             </div>
         </div>
     </div>
 
-    <!-- 스크립트 엔진 -->
     <script>
-        function initRoomAndRole() {
-            const params = new URLSearchParams(window.location.search);
-            let room = params.get('room');
-            let role = params.get('role');
-            
-            if (!room) {
-                room = String(Math.floor(100000 + Math.random() * 900000));
-                params.set('room', room);
-            }
-            if (!role) {
-                role = 'teacher';
-                params.set('role', role);
-            }
-            
-            window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
-            return { room, role };
-        }
-
-        const { room: CLASSROOM_ID, role: USER_ROLE } = initRoomAndRole(); 
+        // ============================================ 초기화 영역 ============================================
+        const CLASSROOM_ID = new URLSearchParams(window.location.search).get('room') || "room_" + Date.now();
         
+        // Firebase 설정
         const firebaseConfig = {
-            apiKey: "AIzaSyDZ2BMCd3kspcmWnH3_BWUIsUBU3TGNikc",
-            authDomain: "gyungmae.firebaseapp.com",
-            databaseURL: "https://gyungmae-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "gyungmae",
-            storageBucket: "gyungmae.firebasestorage.app",
-            messagingSenderId: "1003475298384",
-            appId: "1:1003475298384:web:1972d89a171e3e7ebb0955",
-            measurementId: "G-JEYGLNSVME"
+            apiKey: "AIzaSyBIHqHBZb9dSgL2Y9nX5mL8kP3jQ4rR5sT",
+            authDomain: "classroom-auction-system.firebaseapp.com",
+            databaseURL: "https://classroom-auction-system-default-rtdb.asia-southeast1.firebaseio.com",
+            projectId: "classroom-auction-system",
+            storageBucket: "classroom-auction-system.appspot.com",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:abcdef1234567890"
         };
 
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
-        const baseRef = database.ref(`auctions_rooms/${CLASSROOM_ID}`);
+        const baseRef = database.ref('classroom/' + CLASSROOM_ID);
 
+        // 전역 상태 변수
+        window.configData = { cols: 6, rows: 4, minBid: 10, currency: '카비', timerSeconds: 60, minIncrement: 0, revealPrice: true, revealBidder: false };
+        window.seatsData = {};
+        window.studentsData = {};
+        window.currentItemName = "진행 중인 경매 없음";
         window.currentPrice = 0;
-        window.currentItemName = "";
-        window.seatsData = {}; 
-        window.studentsData = {}; 
-        window.configData = { currency: "카비", minBid: 10, minIncrement: 0, cols: 6, rows: 4, revealPrice: true, revealBidder: false, timerSeconds: 60 };
-        window.timerInterval = null; 
-        window.isAuctionExpired = false; 
         window.internalCurrentBidder = "없음";
+        window.isAuctionExpired = false;
+        window.timerInterval = null;
+        window.lastRemainingWholeSec = -1;
+        window.previousOnlineStudents = {};
 
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // URL 업데이트 (QR코드 생성용)
+        window.updateUrl = function() {
+            const baseUrl = window.location.origin + window.location.pathname;
+            const url = `${baseUrl}?room=${CLASSROOM_ID}`;
+            document.getElementById('share-url-text').innerText = url;
+            document.getElementById('room-display-tag').innerText = `방 번호: ${CLASSROOM_ID}`;
+            generateQRCode(url);
+        };
+
+        window.updateUrl();
+
+        // QR코드 생성
+        function generateQRCode(url) {
+            const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+            document.getElementById('qr-code-img').src = qrCodeUrl;
+        }
+
+        // 탭 전환
+        function switchTab(tab) {
+            playClickSound();
+            document.getElementById('panel-student').classList.toggle('hidden', tab !== 'student');
+            document.getElementById('panel-teacher').classList.toggle('hidden', tab !== 'teacher');
+            
+            if (tab === 'student') {
+                document.getElementById('btn-student-tab').classList.add('bg-slate-900', 'text-white', 'shadow');
+                document.getElementById('btn-teacher-tab').classList.remove('bg-slate-900', 'text-white', 'shadow');
+                document.getElementById('btn-student-tab').classList.remove('text-slate-400', 'hover:bg-slate-200');
+                document.getElementById('btn-teacher-tab').classList.add('text-slate-400', 'hover:bg-slate-200');
+            } else {
+                document.getElementById('btn-teacher-tab').classList.add('bg-slate-900', 'text-white', 'shadow');
+                document.getElementById('btn-student-tab').classList.remove('bg-slate-900', 'text-white', 'shadow');
+                document.getElementById('btn-teacher-tab').classList.remove('text-slate-400', 'hover:bg-slate-200');
+                document.getElementById('btn-student-tab').classList.add('text-slate-400', 'hover:bg-slate-200');
+            }
+        }
+
+        // ============================================ 효과음 ============================================
+        window.audioContext = null;
+        
+        function getAudioContext() {
+            if (!window.audioContext) {
+                window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            return window.audioContext;
+        }
 
         function playClickSound() {
-            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.05);
-        }
-
-        function playTickSound() {
-            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.type = 'triangle'; osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.08);
-        }
-
-        // 🚨 타이머 종료 10초 이하일 때 재생하는 긴박한 비프음 (일반 째깍음보다 날카롭고 두 번 겹쳐 울림)
-        function playUrgentBeepSound() {
-            const now = audioCtx.currentTime;
-            [0, 0.1].forEach((delay) => {
-                const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-                osc.connect(gain); gain.connect(audioCtx.destination);
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(1400, now + delay);
-                gain.gain.setValueAtTime(0.16, now + delay);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + delay + 0.09);
-                osc.start(now + delay); osc.stop(now + delay + 0.09);
-            });
+            const ctx = getAudioContext();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 800;
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.1);
         }
 
         function playFanfareSound() {
-            const now = audioCtx.currentTime;
-            const notes = [523.25, 659.25, 783.99, 1046.50]; 
-            notes.forEach((freq, index) => {
-                const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-                osc.connect(gain); gain.connect(audioCtx.destination);
-                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(freq, now + (index * 0.12));
-                gain.gain.setValueAtTime(0.1, now + (index * 0.12));
-                gain.gain.exponentialRampToValueAtTime(0.01, now + (index * 0.12) + 0.4);
-                osc.start(now + (index * 0.12)); osc.stop(now + (index * 0.12) + 0.4);
+            const ctx = getAudioContext();
+            const now = ctx.currentTime;
+            const frequencies = [523.25, 659.25, 783.99, 1046.50];
+            frequencies.forEach((freq, idx) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.3, now + idx * 0.1);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + (idx + 1) * 0.1);
+                osc.start(now + idx * 0.1);
+                osc.stop(now + (idx + 1) * 0.1);
             });
         }
 
-        // 😢 유찰 시 재생할 실망스러운 하강음 (trombone-slide 느낌)
         function playSadSound() {
-            const now = audioCtx.currentTime;
-            const notes = [392.00, 349.23, 293.66, 261.63];
-            notes.forEach((freq, index) => {
-                const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-                osc.connect(gain); gain.connect(audioCtx.destination);
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(freq, now + (index * 0.18));
-                osc.frequency.exponentialRampToValueAtTime(freq * 0.85, now + (index * 0.18) + 0.3);
-                gain.gain.setValueAtTime(0.12, now + (index * 0.18));
-                gain.gain.exponentialRampToValueAtTime(0.01, now + (index * 0.18) + 0.35);
-                osc.start(now + (index * 0.18)); osc.stop(now + (index * 0.18) + 0.35);
-            });
+            const ctx = getAudioContext();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.setValueAtTime(400, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.5);
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.5);
         }
 
-        window.onload = function() {
-            document.getElementById('room-display-tag').innerText = `🔢 교실 방 번호: [ ${CLASSROOM_ID} ]`;
-            document.getElementById('login-room-indicator').innerText = `[접속 방 번호: ${CLASSROOM_ID}]`;
-            
-            const studentUrl = `${window.location.origin}${window.location.pathname}?room=${CLASSROOM_ID}&role=student`;
-            document.getElementById('share-url-text').innerText = studentUrl;
-            document.getElementById('qr-code-img').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(studentUrl)}`;
-            
-            if (USER_ROLE === 'student') {
-                document.getElementById('login-overlay').classList.remove('hidden');
-                switchTab('student');
-            } else {
-                document.getElementById('login-overlay').classList.add('hidden');
-                switchTab('teacher');
-            }
-
-            document.body.addEventListener('click', () => {
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-            }, { once: true });
-
-            if (sessionStorage.getItem(`teacher_auth_${CLASSROOM_ID}`) === 'true') {
-                unlockTeacherControls();
-            }
-        };
-
-        function authOrCreateTeacher() {
-            playClickSound();
-            const pwdInput = document.getElementById('teacher-pwd-input').value.trim();
-            if (!pwdInput) { alert("비밀번호를 입력하세요."); return; }
-
-            baseRef.child('teacher_pwd').get().then((snapshot) => {
-                if (!snapshot.exists()) {
-                    baseRef.child('teacher_pwd').set(pwdInput).then(() => {
-                        alert("🎉 이 방의 고유 관리자 암호가 등록되었습니다!");
-                        sessionStorage.setItem(`teacher_auth_${CLASSROOM_ID}`, 'true');
-                        unlockTeacherControls();
-                        saveTeacherSettings();
-                    });
-                } else {
-                    if (snapshot.val() === pwdInput) {
-                        alert("🔓 교사 인증에 성공했습니다.");
-                        sessionStorage.setItem(`teacher_auth_${CLASSROOM_ID}`, 'true');
-                        unlockTeacherControls();
-                    } else {
-                        alert("❌ 비밀번호가 틀렸습니다.");
-                    }
-                }
-            });
+        function playOnlineSound() {
+            const ctx = getAudioContext();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 1000;
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.15);
         }
 
-        function unlockTeacherControls() {
-            document.getElementById('teacher-lock-status').innerText = "인증 완료 🔓";
-            document.getElementById('teacher-lock-status').className = "text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold";
-            document.getElementById('teacher-setup-zone').classList.add('hidden');
-            document.getElementById('teacher-controls').style.opacity = "1";
-            document.getElementById('teacher-controls').style.pointerEvents = "auto";
-
-            // 📜 인증에 성공한 교사에게만 낙찰/유찰 기록 데이터를 불러온다 (미인증 상태에서는 아예 데이터를 받지 않음)
-            if (!window.logsListenerAttached) {
-                window.logsListenerAttached = true;
-                baseRef.child('logs').on('value', (snapshot) => {
-                    renderAuctionLog(snapshot.val());
-                });
-            }
+        function playOfflineSound() {
+            const ctx = getAudioContext();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 400;
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.15);
         }
 
-        function adjustGrid(type, amount) {
-            playClickSound();
-            if(type === 'cols') {
-                let currentCols = parseInt(document.getElementById('txt-cols').innerText);
-                currentCols = Math.max(1, Math.min(12, currentCols + amount));
-                document.getElementById('txt-cols').innerText = currentCols;
-            } else if(type === 'rows') {
-                let currentRows = parseInt(document.getElementById('txt-rows').innerText);
-                currentRows = Math.max(1, Math.min(10, currentRows + amount));
-                document.getElementById('txt-rows').innerText = currentRows;
-            }
-        }
-
-        function saveTeacherSettings() {
-            playClickSound();
-            const currency = document.getElementById('setting-currency').value.trim() || "카비";
-            const minBid = parseInt(document.getElementById('setting-min-bid').value) || 0;
-            const minIncrement = parseInt(document.getElementById('setting-min-increment').value) || 0;
-            const timerSeconds = Math.max(5, parseInt(document.getElementById('setting-timer-seconds').value) || 60);
-            const cols = parseInt(document.getElementById('txt-cols').innerText);
-            const rows = parseInt(document.getElementById('txt-rows').innerText);
-            const revealPrice = document.getElementById('setting-reveal-price').checked;
-            const revealBidder = document.getElementById('setting-reveal-bidder').checked;
-
-            baseRef.child('config').set({ currency, minBid, minIncrement, timerSeconds, cols, rows, revealPrice, revealBidder }).then(() => {
-                alert("💾 설정이 실시간 반영되었습니다!");
-            });
-        }
-
-        // 📡 DB 실시간 감지 리스너
+        // ============================================ Firebase 리스너 ============================================
         baseRef.child('config').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if(data) {
-                window.configData = data;
-                document.getElementById('setting-currency').value = data.currency;
-                document.getElementById('setting-min-bid').value = data.minBid;
-                document.getElementById('setting-min-increment').value = data.minIncrement ?? 0;
-                document.getElementById('txt-cols').innerText = data.cols;
-                document.getElementById('txt-rows').innerText = data.rows;
-                document.getElementById('setting-reveal-price').checked = data.revealPrice ?? true;
-                document.getElementById('setting-reveal-bidder').checked = data.revealBidder ?? false;
-                document.getElementById('setting-timer-seconds').value = data.timerSeconds ?? 60;
-                document.getElementById('grid-info-display').innerText = `${data.cols} × ${data.rows}`;
-                
-                const items = document.getElementsByClassName('currency-txt');
-                for(let i=0; i<items.length; i++) { items[i].innerText = data.currency; }
-                updateCurrentSeatMinLimitLabel();
+            if (snapshot.val()) {
+                window.configData = { ...window.configData, ...snapshot.val() };
+                document.getElementById('setting-currency').value = window.configData.currency;
+                document.getElementById('setting-min-bid').value = window.configData.minBid;
+                document.getElementById('setting-timer-seconds').value = window.configData.timerSeconds;
+                document.getElementById('setting-min-increment').value = window.configData.minIncrement || 0;
+                document.getElementById('setting-reveal-price').checked = window.configData.revealPrice !== false;
+                document.getElementById('setting-reveal-bidder').checked = window.configData.revealBidder === true;
+                document.getElementById('txt-cols').innerText = window.configData.cols;
+                document.getElementById('txt-rows').innerText = window.configData.rows;
+                document.getElementById('grid-info-display').innerText = `${window.configData.cols} × ${window.configData.rows}`;
             }
-            refreshPriceDisplay();
-            renderSeatGrid();
-            renderSeatMinLimitList();
-        });
-
-        baseRef.child('students').on('value', (snapshot) => {
-            window.studentsData = snapshot.val() || {};
-            renderStudentList();
-        baseRef.child('students').on('child_added', (snapshot) => {
-    if (USER_ROLE === 'teacher') {
-        playClickSound(); // 선생님 화면에서만 "띵" 소리 재생
-    }
-});    
-            const keys = Object.keys(window.studentsData);
-            if (keys.length > 0) {
-                document.getElementById('login-wait-area').classList.add('hidden');
-                document.getElementById('login-form-area').classList.remove('hidden');
-                
-                const savedName = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
-                if (savedName && window.studentsData[savedName] !== undefined && USER_ROLE === 'student') {
-                    applyStudentSession(savedName);
-                }
-            } else {
-                document.getElementById('login-form-area').classList.add('hidden');
-                document.getElementById('login-wait-area').classList.remove('hidden');
-                if (USER_ROLE === 'student') document.getElementById('login-overlay').classList.remove('hidden');
-            }
-
-            const currentLoggedIn = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
-            if (currentLoggedIn) updateMyBudgetUI(currentLoggedIn);
-        });
-
-        baseRef.child('current').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                window.currentItemName = data.itemName || "진행 중인 경매 없음";
-                document.getElementById('item-name').innerText = window.currentItemName;
-                
-                const rawBidder = data.bidder || "없음";
-                window.internalCurrentBidder = rawBidder;
-                refreshBidderDisplay();
-
-                window.currentPrice = data.price || 0;
-                
-                if(data.endTime) {
-                    startLocalTimer(data.endTime);
-                } else {
-                    clearInterval(window.timerInterval);
-                    document.getElementById('timer-display').innerText = "00:00";
-                    window.isAuctionExpired = false;
-                }
-                updateCurrentSeatMinLimitLabel();
-            }
-            refreshPriceDisplay();
-            const currentLoggedIn = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
-            if (currentLoggedIn) updateMyBudgetUI(currentLoggedIn);
-            renderSeatGrid();
         });
 
         baseRef.child('seats').on('value', (snapshot) => {
             window.seatsData = snapshot.val() || {};
             renderSeatGrid();
-            renderSeatMinLimitList();
+            updateSeatMinLimitList();
         });
 
-        // 📋 좌석별로 설정된 최소 입찰액을 목록으로 표시 (교사가 한눈에 확인 가능하도록)
-        function renderSeatMinLimitList() {
-            const listDiv = document.getElementById('teacher-seat-minlimit-list');
-            if (!listDiv) return;
-            const entries = Object.entries(window.seatsData || {})
-                .filter(([, info]) => info && info.minLimit !== undefined && info.minLimit !== null)
-                .sort((a, b) => {
-                    const numA = parseInt(a[0]) || 0;
-                    const numB = parseInt(b[0]) || 0;
-                    return numA - numB;
-                });
-
-            if (entries.length === 0) {
-                listDiv.innerHTML = '<p class="text-slate-500 text-center">아직 설정된 좌석이 없습니다.</p>';
-                return;
+        baseRef.child('students').on('value', (snapshot) => {
+            window.studentsData = snapshot.val() || {};
+            renderStudentList();
+            renderOnlineStudentsPanel();
+            
+            // 🔄 로그인 오버레이 표시 (Firebase 데이터 로드 후)
+            const name = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
+            if (name && window.studentsData[name] !== undefined) {
+                loginOverlay.classList.add('hidden');
+                document.getElementById('my-profile-name').innerText = name;
+                document.getElementById('my-profile-budget').innerText = window.studentsData[name];
+                baseRef.child(`online_students/${name}`).set(true);
+            } else if (snapshot.exists()) {
+                loginOverlay.classList.remove('hidden');
             }
+        });
 
-            listDiv.innerHTML = "";
-            entries.forEach(([seatName, info]) => {
-                const row = document.createElement('div');
-                row.className = "flex justify-between items-center bg-slate-800 px-2 py-0.5 rounded text-slate-200";
-                row.innerHTML = `<span>${seatName}</span><span class="font-bold text-amber-400">${parseInt(info.minLimit).toLocaleString()} ${window.configData.currency}</span>`;
-                listDiv.appendChild(row);
+        baseRef.child('online_students').on('value', (snapshot) => {
+            const onlineStudents = snapshot.val() || {};
+            
+            // 오프라인으로 변경된 학생 찾기
+            for (const name in window.previousOnlineStudents) {
+                if (window.previousOnlineStudents[name] === true && onlineStudents[name] !== true) {
+                    playOfflineSound();
+                }
+            }
+            
+            // 온라인으로 변경된 학생 찾기
+            for (const name in onlineStudents) {
+                if (onlineStudents[name] === true && window.previousOnlineStudents[name] !== true) {
+                    playOnlineSound();
+                }
+            }
+            
+            window.previousOnlineStudents = { ...onlineStudents };
+            renderOnlineStudentsPanel();
+        });
+
+        baseRef.child('current').on('value', (snapshot) => {
+            const current = snapshot.val() || { itemName: "진행 중인 경매 없음", bidder: "없음", price: 0, endTime: null };
+            window.currentItemName = current.itemName;
+            window.currentPrice = current.price || 0;
+            window.internalCurrentBidder = current.bidder || "없음";
+            
+            document.getElementById('item-name').innerText = current.itemName || "진행 중인 경매 없음";
+            document.getElementById('current-auction-seat').innerText = current.itemName || "진행 중인 경매 없음";
+            
+            if (document.getElementById('setting-reveal-price').checked) {
+                document.getElementById('current-price').innerText = window.currentPrice;
+            } else {
+                document.getElementById('current-price').innerText = "?";
+            }
+            
+            if (document.getElementById('setting-reveal-bidder').checked) {
+                document.getElementById('current-bidder').innerText = window.internalCurrentBidder;
+            } else {
+                document.getElementById('current-bidder').innerText = "비공개 🔒";
+            }
+            
+            if (window.seatsData[current.itemName]) {
+                const minLimit = window.seatsData[current.itemName].minLimit ?? window.configData.minBid;
+                const displayMin = window.currentPrice > 0 ? (window.currentPrice + (window.configData.minIncrement ?? 0)) : minLimit;
+                document.getElementById('current-seat-min-limit').innerText = displayMin;
+            }
+            
+            renderSeatGrid();
+            
+            if (current.endTime) {
+                clearInterval(window.timerInterval);
+                window.isAuctionExpired = false;
+                window.lastRemainingWholeSec = -1;
+                startCountdown(current.endTime);
+            } else {
+                clearInterval(window.timerInterval);
+                document.getElementById('timer-display').innerText = "00:00";
+            }
+        });
+
+        baseRef.child('logs').on('value', (snapshot) => {
+            renderAuctionLog(snapshot.val());
+        });
+
+        // ============================================ 학생 로그인 ============================================
+        const loginOverlay = document.getElementById('login-overlay');
+        const loginWaitArea = document.getElementById('login-wait-area');
+        const loginFormArea = document.getElementById('login-form-area');
+
+        baseRef.child('students').once('value', (snapshot) => {
+            if (snapshot.exists()) {
+                loginWaitArea.classList.add('hidden');
+                loginFormArea.classList.remove('hidden');
+                document.getElementById('login-room-indicator').innerText = `[방 번호: ${CLASSROOM_ID}]`;
+            }
+        });
+
+        window.attemptLogin = function() {
+            playClickSound();
+            const name = document.getElementById('login-name-input').value.trim();
+            if (!name) { alert("이름을 입력해주세요."); return; }
+            if (!window.studentsData[name]) { alert("명단에 없는 학생입니다."); return; }
+            
+            localStorage.setItem(`student_name_${CLASSROOM_ID}`, name);
+            baseRef.child(`online_students/${name}`).set(true);
+            
+            loginOverlay.classList.add('hidden');
+            switchTab('student');
+            document.getElementById('my-profile-name').innerText = name;
+            document.getElementById('my-profile-budget').innerText = window.studentsData[name];
+        };
+
+        window.logoutStudent = function() {
+            const name = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
+            if (name) baseRef.child(`online_students/${name}`).set(false);
+            localStorage.removeItem(`student_name_${CLASSROOM_ID}`);
+            loginOverlay.classList.remove('hidden');
+            loginWaitArea.classList.remove('hidden');
+            loginFormArea.classList.add('hidden');
+            document.getElementById('login-name-input').value = "";
+        };
+
+
+
+        // ============================================ 실시간 학생 접속 현황 패널 ============================================
+        function renderOnlineStudentsPanel() {
+            const panel = document.getElementById('online-students-panel');
+            const badge = document.getElementById('online-count-badge');
+            panel.innerHTML = '';
+            
+            baseRef.child('online_students').once('value', (snapshot) => {
+                const onlineStudents = snapshot.val() || {};
+                const onlineList = [];
+                
+                for (const name in onlineStudents) {
+                    if (onlineStudents[name] === true) {
+                        onlineList.push(name);
+                    }
+                }
+                
+                badge.innerText = `${onlineList.length}명`;
+                
+                if (onlineList.length === 0) {
+                    panel.innerHTML = '<p class="text-xs text-gray-500 text-center py-3">학생이 아직 접속하지 않음</p>';
+                    return;
+                }
+                
+                onlineList.forEach(name => {
+                    const item = document.createElement('div');
+                    item.className = "flex items-center gap-2 bg-white p-2 rounded border border-green-100";
+                    item.innerHTML = `
+                        <div class="w-2 h-2 bg-green-500 rounded-full online-indicator"></div>
+                        <span class="text-xs font-bold text-slate-700">${name}</span>
+                    `;
+                    panel.appendChild(item);
+                });
             });
         }
 
-        // 🔒 블라인드 처리 여부에 따른 실시간 텍스트 변환기
-        function refreshPriceDisplay() {
-            const isTeacher = (USER_ROLE === 'teacher');
-            const isRevealed = (window.configData.revealPrice ?? true);
-
-            if (isTeacher || isRevealed) {
-                // 교사이거나 설정이 '공개'일 때 정상 노출
-                document.getElementById('current-price').innerText = window.currentPrice.toLocaleString();
-            } else {
-                // 학생이고 설정이 '비공개'일 때 마스킹 처리
-                document.getElementById('current-price').innerText = "비공개 🔒";
-            }
-            refreshBidderDisplay();
-        }
-
-        // 🔒 최고 입찰자 이름 공개 여부에 따른 실시간 텍스트 변환기 (입찰액과 별도 설정)
-        function refreshBidderDisplay() {
-            const isTeacher = (USER_ROLE === 'teacher');
-            const isRevealed = (window.configData.revealBidder ?? false);
-            const rawBidder = window.internalCurrentBidder;
-            const bidderElem = document.getElementById('current-bidder');
-            if (!bidderElem) return;
-
-            if (!rawBidder || rawBidder === "없음" || rawBidder === "-") {
-                bidderElem.innerText = "없음";
-            } else if (isTeacher || isRevealed) {
-                // 교사이거나 설정이 '공개'일 때 실제 이름 노출
-                bidderElem.innerText = rawBidder;
-            } else {
-                // 학생이고 설정이 '비공개'일 때 마스킹 처리
-                bidderElem.innerText = "비공개 🔒";
-            }
-        }
-
-        function updateCurrentSeatMinLimitLabel() {
-            if(window.currentItemName && window.currentItemName !== "진행 중인 경매 없음") {
-                const seatMin = (window.seatsData && window.seatsData[window.currentItemName]) ? (window.seatsData[window.currentItemName].minLimit ?? window.configData.minBid) : window.configData.minBid;
-                const minIncrement = window.configData.minIncrement ?? 0;
-                const nextRequired = window.currentPrice > 0 ? (window.currentPrice + minIncrement) : seatMin;
-                document.getElementById('current-seat-min-limit').innerText = nextRequired;
-            } else {
-                document.getElementById('current-seat-min-limit').innerText = "0";
-            }
-        }
-
-        function attemptLogin() {
-            playClickSound();
-            const nameInput = document.getElementById('login-name-input').value.trim();
-            if (!nameInput) { alert("이름을 입력해 주세요."); return; }
-
-            if (!window.studentsData || window.studentsData[nameInput] === undefined) {
-                alert(`❌ 등록되지 않은 이름입니다.`); return;
-            }
-            localStorage.setItem(`student_name_${CLASSROOM_ID}`, nameInput);
-          // [기능 추가] 로그인 성공 시 온라인 상태로 변경
-            baseRef.child('online_students').child(nameInput).set(true);
-            applyStudentSession(nameInput);
-        }
-
-        function applyStudentSession(name) {
-            document.getElementById('login-overlay').classList.add('hidden');
-            document.getElementById('my-profile-name').innerText = name;
-            updateMyBudgetUI(name);
-        }
-
-        function logoutStudent() {
-            playClickSound();
-            localStorage.removeItem(`student_name_${CLASSROOM_ID}`);
-            document.getElementById('login-name-input').value = "";
-            document.getElementById('login-overlay').classList.remove('hidden');
-        }
-
-        function updateMyBudgetUI(name) {
-            if (window.studentsData && window.studentsData[name] !== undefined) {
-                let rawBudget = window.studentsData[name]; 
-                let holdingMoney = 0;
-                if (window.internalCurrentBidder === name && window.currentItemName !== "진행 중인 경매 없음") {
-                    holdingMoney = window.currentPrice;
-                }
-                document.getElementById('my-profile-budget').innerText = Math.max(0, rawBudget - holdingMoney).toLocaleString();
-            }
-        }
-
-        function switchTab(role) {
-            playClickSound();
-            const studentTab = document.getElementById('btn-student-tab');
-            const teacherTab = document.getElementById('btn-teacher-tab');
-            const studentPanel = document.getElementById('panel-student');
-            const teacherPanel = document.getElementById('panel-teacher');
-
-            const params = new URLSearchParams(window.location.search);
-            params.set('role', role);
-            window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
-
-            if (role === 'student') {
-                studentTab.className = "flex-1 py-2 rounded-lg font-bold text-sm transition-all bg-blue-600 text-white shadow";
-                teacherTab.className = "flex-1 py-2 rounded-lg font-bold text-sm transition-all text-slate-300 hover:bg-slate-600";
-                studentPanel.classList.remove('hidden');
-                teacherPanel.classList.add('hidden');
-            } else {
-                teacherTab.className = "flex-1 py-2 rounded-lg font-bold text-sm transition-all bg-slate-900 text-white shadow";
-                studentTab.className = "flex-1 py-2 rounded-lg font-bold text-sm transition-all text-slate-400 hover:bg-slate-200";
-                teacherPanel.classList.remove('hidden');
-                studentPanel.classList.add('hidden');
-            }
-            refreshPriceDisplay();
-        }
-
-        function startLocalTimer(endTimeStamp) {
+        // ============================================ 타이머 및 자동 처리 ============================================
+        function startCountdown(endTimeStamp) {
             clearInterval(window.timerInterval);
-            window.isAuctionExpired = false; 
-            let lastRemainingWholeSec = null;
+            window.isAuctionExpired = false;
+            window.lastRemainingWholeSec = -1;
 
             window.timerInterval = setInterval(() => {
                 const now = new Date().getTime();
-                const timeLeft = endTimeStamp - now;
+                const remainingMs = endTimeStamp - now;
 
-                if (timeLeft <= 0) {
-    clearInterval(window.timerInterval);
-    document.getElementById('timer-display').innerText = "종료됨";
-    window.isAuctionExpired = true;
-    
-    // 이 부분을 return; 앞에 넣으세요
-    if (USER_ROLE === 'teacher') {
-        if (window.internalCurrentBidder !== "없음") {
-            closeAuction(); 
-        } else {
-            cancelAuctionWithoutWinner();
-        }
-    } return;
-                }
-                const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
-                const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
-                const wholeSecondsLeft = Math.floor(timeLeft / 1000);
-
-                // ⏱️ 타이머가 도는 동안 매초 소리 재생 (마지막 10초 이하는 긴박한 비프음으로 전환)
-                if (wholeSecondsLeft !== lastRemainingWholeSec) {
-                    if (wholeSecondsLeft < 10) {
-                        playUrgentBeepSound();
+                if (remainingMs <= 0) {
+                    clearInterval(window.timerInterval);
+                    window.isAuctionExpired = true;
+                    document.getElementById('timer-display').innerText = "00:00";
+                    
+                    // ⏱️ 타이머 종료 시 자동 처리
+                    if (window.internalCurrentBidder && window.internalCurrentBidder !== "없음" && window.internalCurrentBidder !== "-") {
+                        // 입찰자가 있으면 자동 낙찰
+                        if (document.getElementById('setting-auto-close')?.checked) {
+                            setTimeout(() => {
+                                playFanfareSound();
+                                const soldSeat = window.currentItemName;
+                                const soldPrice = window.currentPrice;
+                                const currentBidder = window.internalCurrentBidder;
+                                
+                                baseRef.child(`seats/${soldSeat}`).update({
+                                    status: 'sold', winner: currentBidder, finalPrice: soldPrice
+                                });
+                                if(window.studentsData && window.studentsData[currentBidder] !== undefined) {
+                                    baseRef.child(`students/${currentBidder}`).set(Math.max(0, window.studentsData[currentBidder] - soldPrice));
+                                }
+                                baseRef.child('logs').push({ type: 'sold', seat: soldSeat, winner: currentBidder, price: soldPrice, timestamp: Date.now() });
+                                baseRef.child('current').set({ itemName: "진행 중인 경매 없음", bidder: "없음", price: 0, endTime: null });
+                                alert(`⏰ [자동 낙찰] ${soldSeat} 낙찰됨!`);
+                            }, 300);
+                        }
                     } else {
-                        playTickSound();
+                        // 입찰자가 없으면 자동 유찰
+                        if (document.getElementById('setting-auto-cancel')?.checked) {
+                            setTimeout(() => {
+                                playSadSound();
+                                const cancelledSeat = window.currentItemName;
+                                baseRef.child('logs').push({ type: 'cancelled', seat: cancelledSeat, timestamp: Date.now() });
+                                baseRef.child('current').set({ itemName: "진행 중인 경매 없음", bidder: "없음", price: 0, endTime: null });
+                                alert(`⏰ [자동 유찰] ${cancelledSeat} 유찰됨`);
+                            }, 300);
+                        }
+                    }
+                    return;
+                }
+
+                const wholeSecondsLeft = Math.ceil(remainingMs / 1000);
+                if (wholeSecondsLeft !== window.lastRemainingWholeSec) {
+                    const minutes = Math.floor((wholeSecondsLeft - 1) / 60);
+                    const seconds = (wholeSecondsLeft - 1) % 60;
+                    if (wholeSecondsLeft <= 10 && wholeSecondsLeft > 0) {
+                        playClickSound();
                     }
                     lastRemainingWholeSec = wholeSecondsLeft;
                 }
@@ -790,78 +766,93 @@
             }, 200);
         }
 
+        // ============================================ 좌석 그리드 렌더링 ============================================
         function renderSeatGrid() {
-    const gridContainer = document.getElementById('seat-grid');
-    gridContainer.innerHTML = "";
-    const totalCols = window.configData.cols || 6;
-    const totalRows = window.configData.rows || 4;
-    gridContainer.style.gridTemplateColumns = `repeat(${totalCols}, minmax(0, 1fr))`;
-    const totalSeatsCount = totalCols * totalRows;
+            const gridContainer = document.getElementById('seat-grid');
+            gridContainer.innerHTML = "";
+            const totalCols = window.configData.cols || 6;
+            const totalRows = window.configData.rows || 4;
+            gridContainer.style.gridTemplateColumns = `repeat(${totalCols}, minmax(0, 1fr))`;
+            const totalSeatsCount = totalCols * totalRows;
 
-    for(let i = 1; i <= totalSeatsCount; i++) {
-        const seatName = `${i}번 좌석`;
-        const seatInfo = window.seatsData[seatName] || { status: 'empty', winner: '', finalPrice: 0 };
-        const seatButton = document.createElement('button');
-        seatButton.type = "button";
-        
-        let baseClass = "h-14 sm:h-16 rounded-lg border flex flex-col items-center justify-center p-1 font-bold transition-all text-[10px] sm:text-xs text-center ";
-        
-        if (window.currentItemName === seatName) {
-            baseClass += "bg-amber-400 border-amber-500 text-amber-950 auctioning-seat shadow-md";
-            seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] text-red-600 font-extrabold mt-0.5">🔥 경매중</span>`;
-        } else if (seatInfo.status === 'sold') {
-            baseClass += "bg-green-500 border-green-600 text-white cursor-pointer shadow-sm";
-            seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] bg-green-700 px-0.5 rounded mt-0.5">${seatInfo.winner}<br>${seatInfo.finalPrice}${window.configData.currency}</span>`;
-            seatButton.onclick = () => {
-                if(confirm(`${seatName}을(를) 초기화하고 재사용하시겠습니까?`)) {
-                    baseRef.child(`seats/${seatName}`).update({ status: 'empty', winner: '', finalPrice: 0 });
+            for(let i = 1; i <= totalSeatsCount; i++) {
+                const seatName = `${i}번 좌석`;
+                const seatInfo = window.seatsData[seatName] || { status: 'empty', winner: '', finalPrice: 0 };
+                const seatButton = document.createElement('button');
+                seatButton.type = "button";
+                
+                let baseClass = "h-14 sm:h-16 rounded-lg border flex flex-col items-center justify-center p-1 font-bold transition-all text-[10px] sm:text-xs text-center ";
+                
+                if (window.currentItemName === seatName) {
+                    baseClass += "bg-amber-400 border-amber-500 text-amber-950 auctioning-seat shadow-md";
+                    seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] text-red-600 font-extrabold mt-0.5">🔥 경매중</span>`;
+                } else if (seatInfo.status === 'sold') {
+                    baseClass += "bg-green-500 border-green-600 text-white cursor-pointer shadow-sm";
+                    seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] bg-green-700 px-0.5 rounded mt-0.5">${seatInfo.winner}<br>${seatInfo.finalPrice}${window.configData.currency}</span>`;
+                    seatButton.onclick = () => {
+                        if(confirm(`${seatName}을(를) 초기화하고 재사용하시겠습니까?\n\n💰 ${seatInfo.winner} 학생에게 ${seatInfo.finalPrice}${window.configData.currency} 반환됩니다.`)) {
+                            // 🔄 낙찰된 학생에게 돈 반환
+                            if(window.studentsData && window.studentsData[seatInfo.winner] !== undefined) {
+                                const refundAmount = seatInfo.finalPrice;
+                                const currentBalance = window.studentsData[seatInfo.winner];
+                                const newBalance = currentBalance + refundAmount;
+                                baseRef.child(`students/${seatInfo.winner}`).set(newBalance);
+                                console.log(`💰 ${seatInfo.winner}에게 ${refundAmount}${window.configData.currency} 반환됨. (${currentBalance} → ${newBalance})`);
+                            }
+                            // 좌석 초기화
+                            baseRef.child(`seats/${seatName}`).update({ status: 'empty', winner: '', finalPrice: 0 });
+                            alert(`✅ ${seatName} 초기화 완료!`);
+                        }
+                    };
+                } else {
+                    baseClass += "bg-white border-gray-300 text-gray-600 hover:border-blue-400 hover:bg-blue-50 cursor-pointer";
+                    seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] text-gray-400 font-normal mt-0.5">대기</span>`;
+                    seatButton.onclick = () => {
+                        playClickSound();
+                        if (sessionStorage.getItem(`teacher_auth_${CLASSROOM_ID}`) === 'true') {
+                            document.getElementById('new-item-name').value = seatName;
+                        }
+                    };
                 }
-            };
-        } else {
-            baseClass += "bg-white border-gray-300 text-gray-600 hover:border-blue-400 hover:bg-blue-50 cursor-pointer";
-            seatButton.innerHTML = `<span>${seatName}</span><span class="text-[9px] text-gray-400 font-normal mt-0.5">대기</span>`;
-            seatButton.onclick = () => {
-                playClickSound();
-                if (sessionStorage.getItem(`teacher_auth_${CLASSROOM_ID}`) === 'true') {
-                    document.getElementById('new-item-name').value = seatName;
-                }
-            };
+                seatButton.className = baseClass;
+                gridContainer.appendChild(seatButton);
+            }
         }
-        seatButton.className = baseClass;
-        gridContainer.appendChild(seatButton);
-    }
-}
-// [여기까지만 딱 덮어씌우세요]
+
+        // ============================================ 학생 목록 렌더링 ============================================
         function renderStudentList() {
-    const listDiv = document.getElementById('teacher-student-list');
-    listDiv.innerHTML = "";
-    
-    // 온라인 학생 데이터를 가져옵니다
-    baseRef.child('online_students').once('value', (snapshot) => {
-        const onlineStudents = snapshot.val() || {};
-        const keys = Object.keys(window.studentsData);
-
-        keys.forEach(name => {
-            const isOnline = onlineStudents[name] === true; // 온라인 여부 확인
-            const item = document.createElement('div');
-            item.className = "flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100";
+            const listDiv = document.getElementById('teacher-student-list');
+            listDiv.innerHTML = "";
             
-            // 초록 불 아이콘 추가
-            const statusColor = isOnline ? "bg-green-500" : "bg-gray-300";
-            
-            item.innerHTML = `
-                <div class="flex items-center gap-2">
-                    <div class="w-2 h-2 rounded-full ${statusColor}"></div>
-                    <span>👤 <b>${name}</b></span>
-                </div>
-                <span class="text-blue-600 font-bold">${parseInt(window.studentsData[name]).toLocaleString()}</span>
-            `;
-            listDiv.appendChild(item);
-        });
-    });
-}
+            const keys = Object.keys(window.studentsData);
+            if (keys.length === 0) {
+                listDiv.innerHTML = '<p class="text-gray-400 text-center">등록된 학생이 없습니다.</p>';
+                return;
+            }
 
-        // 📜 낙찰/유찰 기록 렌더링 (최근 기록이 위로 오도록 정렬) - 교사 인증 후에만 호출됨
+            baseRef.child('online_students').once('value', (snapshot) => {
+                const onlineStudents = snapshot.val() || {};
+
+                keys.forEach(name => {
+                    const isOnline = onlineStudents[name] === true;
+                    const item = document.createElement('div');
+                    item.className = "flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100";
+                    
+                    const statusColor = isOnline ? "bg-green-500" : "bg-gray-300";
+                    
+                    item.innerHTML = `
+                        <div class="flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full ${statusColor}"></div>
+                            <span>👤 <b>${name}</b></span>
+                        </div>
+                        <span class="text-blue-600 font-bold">${parseInt(window.studentsData[name]).toLocaleString()}</span>
+                    `;
+                    listDiv.appendChild(item);
+                });
+            });
+        }
+
+        // ============================================ 낙찰/유찰 기록 렌더링 ============================================
         function renderAuctionLog(logsObj) {
             const listDiv = document.getElementById('teacher-auction-log-list');
             if (!listDiv) return;
@@ -888,7 +879,7 @@
             });
         }
 
-        // 🖼️ 좌석 배치도를 이미지(PNG)로 저장
+        // ============================================ 좌석 배치도를 이미지로 저장 ============================================
         function exportSeatLayoutImage() {
             playClickSound();
             const target = document.getElementById('seat-layout-capture');
@@ -907,6 +898,65 @@
             });
         }
 
+        // ============================================ 교사 인증 ============================================
+        window.authOrCreateTeacher = function() {
+            playClickSound();
+            const pwd = document.getElementById('teacher-pwd-input').value;
+            if (!pwd) { alert("암호를 입력해주세요."); return; }
+            
+            baseRef.child('teacher_pwd').once('value', (snapshot) => {
+                const storedPwd = snapshot.val();
+                if (!storedPwd) {
+                    baseRef.child('teacher_pwd').set(pwd);
+                    sessionStorage.setItem(`teacher_auth_${CLASSROOM_ID}`, 'true');
+                    document.getElementById('teacher-lock-status').innerText = "인증됨 ✅";
+                    document.getElementById('teacher-lock-status').className = "text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold";
+                    document.getElementById('teacher-controls').classList.remove('opacity-40', 'pointer-events-none');
+                    document.getElementById('teacher-setup-zone').classList.add('hidden');
+                    alert("교사 계정이 생성되었습니다!");
+                } else if (storedPwd === pwd) {
+                    sessionStorage.setItem(`teacher_auth_${CLASSROOM_ID}`, 'true');
+                    document.getElementById('teacher-lock-status').innerText = "인증됨 ✅";
+                    document.getElementById('teacher-lock-status').className = "text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold";
+                    document.getElementById('teacher-controls').classList.remove('opacity-40', 'pointer-events-none');
+                    document.getElementById('teacher-setup-zone').classList.add('hidden');
+                    alert("인증되었습니다!");
+                } else {
+                    alert("암호가 틀렸습니다.");
+                }
+            });
+        };
+
+        // ============================================ 그리드 조정 ============================================
+        function adjustGrid(type, delta) {
+            playClickSound();
+            if (type === 'cols') {
+                window.configData.cols = Math.max(3, Math.min(10, (window.configData.cols || 6) + delta));
+                document.getElementById('txt-cols').innerText = window.configData.cols;
+            } else {
+                window.configData.rows = Math.max(2, Math.min(10, (window.configData.rows || 4) + delta));
+                document.getElementById('txt-rows').innerText = window.configData.rows;
+            }
+            document.getElementById('grid-info-display').innerText = `${window.configData.cols} × ${window.configData.rows}`;
+            renderSeatGrid();
+        }
+
+        // ============================================ 설정 저장 ============================================
+        function saveConfig() {
+            playClickSound();
+            window.configData.currency = document.getElementById('setting-currency').value || '카비';
+            window.configData.minBid = parseInt(document.getElementById('setting-min-bid').value) || 10;
+            window.configData.timerSeconds = parseInt(document.getElementById('setting-timer-seconds').value) || 60;
+            window.configData.minIncrement = parseInt(document.getElementById('setting-min-increment').value) || 0;
+            window.configData.revealPrice = document.getElementById('setting-reveal-price').checked;
+            window.configData.revealBidder = document.getElementById('setting-reveal-bidder').checked;
+            
+            baseRef.child('config').set(window.configData).then(() => {
+                alert("✅ 설정이 저장되었습니다!");
+            });
+        }
+
+        // ============================================ 일괄 학생 등록 ============================================
         function importBulkStudents() {
             playClickSound();
             const rawText = document.getElementById('teacher-bulk-input').value.trim();
@@ -935,6 +985,7 @@
             }
         }
 
+        // ============================================ 입찰 기능 ============================================
         function placeCustomBid() {
             playClickSound();
             const name = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
@@ -959,7 +1010,6 @@
             const currentSeatMin = (window.seatsData && window.seatsData[window.currentItemName]) ? (window.seatsData[window.currentItemName].minLimit ?? window.configData.minBid) : window.configData.minBid;
             const minIncrement = window.configData.minIncrement ?? 0;
 
-            // 최초 입찰(현재가 0)은 좌석 최소 입찰액 이상, 그 이후는 현재가 + 최소 상위 입찰 증가액 이상이어야 함
             const requiredMin = window.currentPrice > 0 ? (window.currentPrice + minIncrement) : currentSeatMin;
 
             if (customBidPrice < currentSeatMin) {
@@ -980,6 +1030,7 @@
             });
         }
 
+        // ============================================ 경매 시작/종료 ============================================
         function startTargetAuction() {
             playClickSound();
             const targetSeat = document.getElementById('new-item-name').value.trim();
@@ -1052,13 +1103,40 @@
             alert("초기화 완료.");
             location.reload();
         }
-      // 브라우저를 닫을 때 온라인 상태 해제
-window.addEventListener('beforeunload', () => {
-    const name = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
-    if (name) {
-        baseRef.child('online_students').child(name).set(false);
-    }
-});
+
+        // ============================================ 좌석별 최소 입찰액 표시 ============================================
+        function updateSeatMinLimitList() {
+            const listDiv = document.getElementById('teacher-seat-minlimit-list');
+            listDiv.innerHTML = '';
+            
+            const seatEntries = Object.entries(window.seatsData || {})
+                .filter(([_, seat]) => seat.minLimit)
+                .sort((a, b) => {
+                    const aNum = parseInt(a[0]);
+                    const bNum = parseInt(b[0]);
+                    return aNum - bNum;
+                });
+
+            if (seatEntries.length === 0) {
+                listDiv.innerHTML = '<p class="text-slate-500 text-center">아직 설정된 좌석이 없습니다.</p>';
+                return;
+            }
+
+            seatEntries.forEach(([seatName, seat]) => {
+                const row = document.createElement('div');
+                row.className = "bg-slate-800 text-slate-200 p-1 rounded text-[10px] flex justify-between";
+                row.innerHTML = `<span>${seatName}</span><span class="font-bold text-amber-400">${seat.minLimit}${window.configData.currency}</span>`;
+                listDiv.appendChild(row);
+            });
+        }
+
+        // ============================================ 브라우저 닫을 때 온라인 상태 해제 ============================================
+        window.addEventListener('beforeunload', () => {
+            const name = localStorage.getItem(`student_name_${CLASSROOM_ID}`);
+            if (name) {
+                baseRef.child('online_students').child(name).set(false);
+            }
+        });
     </script>
 </body>
 </html>
