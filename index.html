@@ -963,9 +963,12 @@
             clonedTarget.style.position = 'absolute';
             clonedTarget.style.left = '-9999px';
             clonedTarget.style.top = '-9999px';
+            clonedTarget.style.visibility = 'visible';
+            
+            // 1단계: DOM에 먼저 추가 (클래스는 유지한 상태)
             document.body.appendChild(clonedTarget);
             
-            // 1단계: Computed 스타일을 inline으로 변환
+            // 2단계: Computed 스타일을 inline으로 변환 (Tailwind 스타일이 적용된 상태에서 읽음)
             const allElements = clonedTarget.querySelectorAll('*');
             allElements.forEach(el => {
                 try {
@@ -977,22 +980,23 @@
                     el.style.borderRightColor = computed.borderRightColor;
                     el.style.borderBottomColor = computed.borderBottomColor;
                     el.style.borderLeftColor = computed.borderLeftColor;
-                    el.style.boxShadow = computed.boxShadow;
                 } catch(e) {
                     // 오류 무시
                 }
-                
-                // 2단계: 클래스 제거 (Tailwind oklch 제거)
-                el.className = '';
             });
             
             try {
-                const rootComputed = window.getComputedStyle(clonedTarget);
-                clonedTarget.style.backgroundColor = rootComputed.backgroundColor;
-                clonedTarget.style.color = rootComputed.color;
+                const computed = window.getComputedStyle(clonedTarget);
+                clonedTarget.style.backgroundColor = computed.backgroundColor;
+                clonedTarget.style.color = computed.color;
             } catch(e) {
                 // 오류 무시
             }
+            
+            // 3단계: 이제 클래스 제거 (inline 스타일은 유지)
+            allElements.forEach(el => {
+                el.className = '';
+            });
             clonedTarget.className = '';
             
             html2canvas(clonedTarget, { 
